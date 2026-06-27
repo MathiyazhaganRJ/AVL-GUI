@@ -186,32 +186,31 @@ def calculate_coords(surface_origin, df, incidence_angle):
     cos_inc = np.cos(inc_rad)
     sin_inc = np.sin(inc_rad)
     try:
-        x_rel_accum = 0.0
         z_rel_accum = 0.0
         if len(df) > 0:
             row0 = df.iloc[0]
             y_rel = _safe_float(row0["Y"])
-            x_rel_accum += _safe_float(row0["Offset"])
-            x_rot_abs = surface_origin[0] + x_rel_accum * cos_inc - z_rel_accum * sin_inc
-            z_rot_abs = surface_origin[2] + x_rel_accum * sin_inc + z_rel_accum * cos_inc
+            x_rel = _safe_float(row0["Offset"])
+            x_rot_abs = surface_origin[0] + x_rel * cos_inc - z_rel_accum * sin_inc
+            z_rot_abs = surface_origin[2] + x_rel * sin_inc + z_rel_accum * cos_inc
             coords.append({"X": x_rot_abs, "Y": surface_origin[1] + y_rel, "Z": z_rot_abs, "Chord": _safe_float(row0["Chord"], 1.0), "Twist": _safe_float(row0["Twist"]), "Airfoil": str(row0["Airfoil"]), "Ctrl": str(row0["Ctrl"]), "Hinge": _safe_float(row0["Hinge"]), "Sym": int(_safe_float(row0["Sym"], 0))})
             prev_y = y_rel
             for i in range(1, len(df)):
                 row = df.iloc[i]
+                prev_row = df.iloc[i-1]
                 d_span = _safe_float(row["Y"]) - prev_y
-                dihed = _safe_float(row["Dihedral"])
-                if abs(dihed - 90.0) < 1.0:
+                prev_dihed = _safe_float(prev_row["Dihedral"])
+                if abs(prev_dihed - 90.0) < 1.0:
                     dz_rel = d_span  # vertical: span step entirely in Z
                     y_rel = prev_y   # keep Y constant so segment is vertical (90°)
-                    # prev_y unchanged so next d_span still from root
                 else:
-                    dz_rel = d_span * np.tan(np.radians(dihed))
+                    dz_rel = d_span * np.tan(np.radians(prev_dihed))
                     y_rel = _safe_float(row["Y"])
-                    prev_y = y_rel
-                x_rel_accum += _safe_float(row["Offset"])
+                prev_y = y_rel
+                x_rel = _safe_float(row["Offset"])
                 z_rel_accum += dz_rel
-                x_rot_abs = surface_origin[0] + x_rel_accum * cos_inc - z_rel_accum * sin_inc
-                z_rot_abs = surface_origin[2] + x_rel_accum * sin_inc + z_rel_accum * cos_inc
+                x_rot_abs = surface_origin[0] + x_rel * cos_inc - z_rel_accum * sin_inc
+                z_rot_abs = surface_origin[2] + x_rel * sin_inc + z_rel_accum * cos_inc
                 coords.append({"X": x_rot_abs, "Y": surface_origin[1] + y_rel, "Z": z_rot_abs, "Chord": _safe_float(row["Chord"], 1.0), "Twist": _safe_float(row["Twist"]), "Airfoil": str(row["Airfoil"]), "Ctrl": str(row["Ctrl"]), "Hinge": _safe_float(row["Hinge"]), "Sym": int(_safe_float(row["Sym"], 0))})
     except Exception as e:
         st.error(f"Error in coordinate calculation: {e}")
@@ -227,14 +226,13 @@ def calculate_coords_for_avl(surface_origin, df):
     df = clean_dataframe(df)
     coords = []
     try:
-        x_rel_accum = 0.0
         z_rel_accum = 0.0
         if len(df) == 0:
             return pd.DataFrame(coords)
         row0 = df.iloc[0]
         y_rel = _safe_float(row0["Y"])
-        x_rel_accum += _safe_float(row0["Offset"])
-        x_abs = surface_origin[0] + x_rel_accum
+        x_rel = _safe_float(row0["Offset"])
+        x_abs = surface_origin[0] + x_rel
         z_abs = surface_origin[2] + z_rel_accum
         coords.append({
             "X": x_abs, "Y": surface_origin[1] + y_rel, "Z": z_abs,
@@ -246,19 +244,19 @@ def calculate_coords_for_avl(surface_origin, df):
         prev_y = y_rel
         for i in range(1, len(df)):
             row = df.iloc[i]
+            prev_row = df.iloc[i-1]
             d_span = _safe_float(row["Y"]) - prev_y
-            dihed_deg = _safe_float(row["Dihedral"])
+            dihed_deg = _safe_float(prev_row["Dihedral"])
             if abs(dihed_deg - 90.0) < 1.0:
                 dz_rel = d_span   # vertical: span step entirely in Z
                 y_rel = prev_y   # keep Y constant so segment is vertical (90°)
-                # prev_y unchanged
             else:
                 dz_rel = d_span * np.tan(np.radians(dihed_deg))
                 y_rel = _safe_float(row["Y"])
-                prev_y = y_rel
-            x_rel_accum += _safe_float(row["Offset"])
+            prev_y = y_rel
+            x_rel = _safe_float(row["Offset"])
             z_rel_accum += dz_rel
-            x_abs = surface_origin[0] + x_rel_accum
+            x_abs = surface_origin[0] + x_rel
             z_abs = surface_origin[2] + z_rel_accum
             coords.append({
                 "X": x_abs, "Y": surface_origin[1] + y_rel, "Z": z_abs,
@@ -361,13 +359,18 @@ def plot_3d(data_dict, show_mass=True, camera_eye=None):
         y = abs_df["Y"].values
         z = abs_df["Z"].values
         c = abs_df["Chord"].values
+        t_rad = np.radians(abs_df["Twist"].values)
         sides = [1] if not surf.get("duplicate_y", True) else [1, -1]
         for side in sides:
             y_mult = side
             for i in range(len(x) - 1):
-                x_c = [x[i], x[i] + c[i], x[i + 1] + c[i + 1], x[i + 1]]
+                x_te_i = x[i] + c[i] * np.cos(t_rad[i])
+                z_te_i = z[i] - c[i] * np.sin(t_rad[i])
+                x_te_next = x[i + 1] + c[i + 1] * np.cos(t_rad[i + 1])
+                z_te_next = z[i + 1] - c[i + 1] * np.sin(t_rad[i + 1])
+                x_c = [x[i], x_te_i, x_te_next, x[i + 1]]
                 y_c = [y[i] * y_mult, y[i] * y_mult, y[i + 1] * y_mult, y[i + 1] * y_mult]
-                z_c = [z[i], z[i], z[i + 1], z[i + 1]]
+                z_c = [z[i], z_te_i, z_te_next, z[i + 1]]
                 if y_mult == 1:
                     i_idx, j_idx, k_idx = [0, 0], [1, 2], [2, 3]
                 else:
@@ -378,9 +381,13 @@ def plot_3d(data_dict, show_mass=True, camera_eye=None):
                 ctrl = str(abs_df.iloc[i + 1]["Ctrl"])
                 hinge = abs_df.iloc[i + 1]["Hinge"]
                 if len(ctrl) > 1 and ctrl.lower() != "nan":
-                    cs_x = [x[i] + c[i] * hinge, x[i] + c[i], x[i + 1] + c[i + 1], x[i + 1] + c[i + 1] * hinge]
+                    x_h_i = x[i] + c[i] * hinge * np.cos(t_rad[i])
+                    z_h_i = z[i] - c[i] * hinge * np.sin(t_rad[i])
+                    x_h_next = x[i + 1] + c[i + 1] * hinge * np.cos(t_rad[i + 1])
+                    z_h_next = z[i + 1] - c[i + 1] * hinge * np.sin(t_rad[i + 1])
+                    cs_x = [x_h_i, x_te_i, x_te_next, x_h_next]
                     cs_y = [y[i] * y_mult, y[i] * y_mult, y[i + 1] * y_mult, y[i + 1] * y_mult]
-                    cs_z = [v + 0.002 for v in z_c]
+                    cs_z = [z_h_i + 0.002, z_te_i + 0.002, z_te_next + 0.002, z_h_next + 0.002]
                     fig.add_trace(go.Mesh3d(x=cs_x, y=cs_y, z=cs_z, i=i_idx, j=j_idx, k=k_idx, color=C_CTRL, opacity=1.0, flatshading=True, name=ctrl, lighting=lighting))
 
     if show_mass and not data_dict["masses"].empty:
@@ -411,17 +418,26 @@ def plot_3d_pyvista(data_dict, show_mass=True, view_preset="Default"):
             continue
         x, y, z = abs_df["X"].values, abs_df["Y"].values, abs_df["Z"].values
         c = abs_df["Chord"].values
+        t_rad = np.radians(abs_df["Twist"].values)
         sides = [1] if not surf.get("duplicate_y", True) else [1, -1]
         for y_mult in sides:
             for i in range(len(x) - 1):
-                points = np.array([[x[i], y[i] * y_mult, z[i]], [x[i] + c[i], y[i] * y_mult, z[i]], [x[i + 1] + c[i + 1], y[i + 1] * y_mult, z[i + 1]], [x[i + 1], y[i + 1] * y_mult, z[i + 1]]])
+                x_te_i = x[i] + c[i] * np.cos(t_rad[i])
+                z_te_i = z[i] - c[i] * np.sin(t_rad[i])
+                x_te_next = x[i + 1] + c[i + 1] * np.cos(t_rad[i + 1])
+                z_te_next = z[i + 1] - c[i + 1] * np.sin(t_rad[i + 1])
+                points = np.array([[x[i], y[i] * y_mult, z[i]], [x_te_i, y[i] * y_mult, z_te_i], [x_te_next, y[i + 1] * y_mult, z_te_next], [x[i + 1], y[i + 1] * y_mult, z[i + 1]]])
                 face = [4, 0, 1, 2, 3]
                 mesh = pv.PolyData(points, faces=face)
                 plotter.add_mesh(mesh, color=C_SURFACE, show_edges=True, edge_color=C_EDGE, line_width=2)
                 ctrl = str(abs_df.iloc[i + 1]["Ctrl"])
                 hinge = abs_df.iloc[i + 1]["Hinge"]
                 if len(ctrl) > 1 and ctrl.lower() != "nan":
-                    cs_points = np.array([[x[i] + c[i] * hinge, y[i] * y_mult, z[i] + 0.002], [x[i] + c[i], y[i] * y_mult, z[i] + 0.002], [x[i + 1] + c[i + 1], y[i + 1] * y_mult, z[i + 1] + 0.002], [x[i + 1] + c[i + 1] * hinge, y[i + 1] * y_mult, z[i + 1] + 0.002]])
+                    x_h_i = x[i] + c[i] * hinge * np.cos(t_rad[i])
+                    z_h_i = z[i] - c[i] * hinge * np.sin(t_rad[i])
+                    x_h_next = x[i + 1] + c[i + 1] * hinge * np.cos(t_rad[i + 1])
+                    z_h_next = z[i + 1] - c[i + 1] * hinge * np.sin(t_rad[i + 1])
+                    cs_points = np.array([[x_h_i, y[i] * y_mult, z_h_i + 0.002], [x_te_i, y[i] * y_mult, z_te_i + 0.002], [x_te_next, y[i + 1] * y_mult, z_te_next + 0.002], [x_h_next, y[i + 1] * y_mult, z_h_next + 0.002]])
                     cs_mesh = pv.PolyData(cs_points, faces=face)
                     plotter.add_mesh(cs_mesh, color=C_CTRL, show_edges=True, edge_color=C_EDGE)
     if show_mass and not data_dict["masses"].empty:
@@ -469,19 +485,28 @@ def plot_3d_matplotlib(data_dict, show_mass=True, view_preset="Default"):
             continue
         x, y, z = abs_df["X"].values, abs_df["Y"].values, abs_df["Z"].values
         c = abs_df["Chord"].values
+        t_rad = np.radians(abs_df["Twist"].values)
         sides = [1] if not surf.get("duplicate_y", True) else [1, -1]
         for y_mult in sides:
             for i in range(len(x) - 1):
-                x_c = np.array([x[i], x[i] + c[i], x[i + 1] + c[i + 1], x[i + 1], x[i]])
+                x_te_i = x[i] + c[i] * np.cos(t_rad[i])
+                z_te_i = z[i] - c[i] * np.sin(t_rad[i])
+                x_te_next = x[i + 1] + c[i + 1] * np.cos(t_rad[i + 1])
+                z_te_next = z[i + 1] - c[i + 1] * np.sin(t_rad[i + 1])
+                x_c = np.array([x[i], x_te_i, x_te_next, x[i + 1], x[i]])
                 y_c = np.array([y[i] * y_mult, y[i] * y_mult, y[i + 1] * y_mult, y[i + 1] * y_mult, y[i] * y_mult])
-                z_c = np.array([z[i], z[i], z[i + 1], z[i + 1], z[i]])
+                z_c = np.array([z[i], z_te_i, z_te_next, z[i + 1], z[i]])
                 ax.plot(x_c, y_c, z_c, color=C_SURFACE, linewidth=2)
                 ax.scatter(x_c[:-1], y_c[:-1], z_c[:-1], color=C_SURFACE, s=20)
                 ctrl = str(abs_df.iloc[i + 1]["Ctrl"])
                 hinge = abs_df.iloc[i + 1]["Hinge"]
                 if len(ctrl) > 1 and ctrl.lower() != "nan":
-                    cs_x = np.array([x[i] + c[i] * hinge, x[i] + c[i], x[i + 1] + c[i + 1], x[i + 1] + c[i + 1] * hinge, x[i] + c[i] * hinge])
-                    cs_z = np.array([z[i], z[i], z[i + 1], z[i + 1], z[i]])
+                    x_h_i = x[i] + c[i] * hinge * np.cos(t_rad[i])
+                    z_h_i = z[i] - c[i] * hinge * np.sin(t_rad[i])
+                    x_h_next = x[i + 1] + c[i + 1] * hinge * np.cos(t_rad[i + 1])
+                    z_h_next = z[i + 1] - c[i + 1] * hinge * np.sin(t_rad[i + 1])
+                    cs_x = np.array([x_h_i, x_te_i, x_te_next, x_h_next, x_h_i])
+                    cs_z = np.array([z_h_i, z_te_i, z_te_next, z_h_next, z_h_i])
                     ax.plot(cs_x, y_c, cs_z + 0.002, color=C_CTRL, linewidth=1.5)
     if show_mass and not data_dict["masses"].empty:
         m = clean_dataframe(data_dict["masses"])
@@ -534,6 +559,7 @@ def plot_3view_blueprint(data_dict, show_mass=True, show_labels=True):
         z = abs_df["Z"].values
         c = abs_df["Chord"].values
 
+        t_rad = np.radians(abs_df["Twist"].values)
         cx = np.mean(x)
         cy = np.mean(y)
         if show_labels:
@@ -544,25 +570,32 @@ def plot_3view_blueprint(data_dict, show_mass=True, show_labels=True):
             ctrl = str(abs_df.iloc[i + 1]["Ctrl"])
             hinge = abs_df.iloc[i + 1]["Hinge"]
             has_ctrl = (len(ctrl) > 1 and ctrl.lower() != "nan")
-            h1 = x[i] + c[i] * hinge
-            h2 = x[i + 1] + c[i + 1] * hinge
+            
+            x_te_i = x[i] + c[i] * np.cos(t_rad[i])
+            x_te_next = x[i + 1] + c[i + 1] * np.cos(t_rad[i + 1])
+            z_te_i = z[i] - c[i] * np.sin(t_rad[i])
+            z_te_next = z[i + 1] - c[i + 1] * np.sin(t_rad[i + 1])
+            h1_x = x[i] + c[i] * hinge * np.cos(t_rad[i])
+            h2_x = x[i + 1] + c[i + 1] * hinge * np.cos(t_rad[i + 1])
+            h1_z = z[i] - c[i] * hinge * np.sin(t_rad[i])
+            h2_z = z[i + 1] - c[i + 1] * hinge * np.sin(t_rad[i + 1])
 
             def patch(ax, x_pts, y_pts, is_c=False):
                 col = C_CTRL if is_c else C_SURFACE
                 ax.add_patch(Polygon(list(zip(x_pts, y_pts)), facecolor=col, edgecolor=C_EDGE, alpha=0.9, hatch='////' if is_c else None, linewidth=1.0))
 
             yp = [y[i], y[i + 1], y[i + 1], y[i]]
-            xp = [x[i], x[i + 1], h2 if has_ctrl else x[i + 1] + c[i + 1], h1 if has_ctrl else x[i] + c[i]]
+            xp = [x[i], x[i + 1], h2_x if has_ctrl else x_te_next, h1_x if has_ctrl else x_te_i]
             patch(ax_top, yp, xp)
 
             if surf.get("duplicate_y", True):
                 patch(ax_top, [-v for v in yp], xp)
 
             if has_ctrl:
-                xcp = [h1, h2, x[i + 1] + c[i + 1], x[i] + c[i]]
+                xcp = [h1_x, h2_x, x_te_next, x_te_i]
                 patch(ax_top, yp, xcp, True)
                 if show_labels:
-                    mid_x = (h1 + h2) / 2 + (x[i + 1] + c[i + 1] - h2) / 2
+                    mid_x = (h1_x + h2_x) / 2 + (x_te_next - h2_x) / 2
                     mid_y = (y[i] + y[i + 1]) / 2
                     ax_top.text(mid_y, mid_x, ctrl, fontsize=7, color=AXIS_COLOR, fontweight='bold', ha='center', bbox=dict(facecolor=PLOT_BG, alpha=0.6, pad=0.3))
 
@@ -572,17 +605,17 @@ def plot_3view_blueprint(data_dict, show_mass=True, show_labels=True):
                         ax_top.text(-mid_y, mid_x, ctrl, fontsize=7, color=AXIS_COLOR, fontweight='bold', ha='center', bbox=dict(facecolor=PLOT_BG, alpha=0.6, pad=0.3))
 
             yf = [y[i], y[i + 1], y[i + 1], y[i]]
-            zf = [z[i], z[i + 1], z[i + 1], z[i]]
+            zf = [z[i], z[i + 1], z_te_next, z_te_i]
             patch(ax_front, yf, zf)
             if surf.get("duplicate_y", True):
                 patch(ax_front, [-v for v in yf], zf)
 
-            xs = [x[i], x[i + 1], h2 if has_ctrl else x[i + 1] + c[i + 1], h1 if has_ctrl else x[i] + c[i]]
-            zs = [z[i], z[i + 1], z[i + 1], z[i]]
+            xs = [x[i], x[i + 1], h2_x if has_ctrl else x_te_next, h1_x if has_ctrl else x_te_i]
+            zs = [z[i], z[i + 1], h2_z if has_ctrl else z_te_next, h1_z if has_ctrl else z_te_i]
             patch(ax_side, xs, zs)
             if has_ctrl:
-                xcs = [h1, h2, x[i + 1] + c[i + 1], x[i] + c[i]]
-                zcs = [z[i], z[i + 1], z[i + 1], z[i]]
+                xcs = [h1_x, h2_x, x_te_next, x_te_i]
+                zcs = [h1_z, h2_z, z_te_next, z_te_i]
                 patch(ax_side, xcs, zcs, True)
 
     if show_mass and not data_dict["masses"].empty:
