@@ -1,3 +1,4 @@
+# Mass & Inertia file for Shark Hawk Concept
 Lunit = 1.0 m
 Munit = 1.0 kg
 Tunit = 1.0 s
@@ -5,7 +6,8 @@ Tunit = 1.0 s
 g   = 9.81
 rho = 1.225
 
-#  mass    x     y     z    Ixx   Iyy   Izz    Ixy   Iyz   Izx
-   1.0000   0.5000   0.0000   0.0000   0.001   0.001   0.001   0.0   0.0   0.0   ! Fuselage
-   0.2000   -0.1000   0.0000   0.0000   0.001   0.001   0.001   0.0   0.0   0.0   ! Motor
-   0.5000   0.3000   0.0000   0.0000   0.001   0.001   0.001   0.0   0.0   0.0   ! Battery
+#-------------------------
+#  Mass    X      Y      Z      Ixx    Iyy    Izz    Ixy    Ixz    Iyz
+*
+   1.500   0.300   0.000   0.000   0.0    0.0    0.0    0.0    0.0    0.0   ! Fuselage
+   0.800   0.200   0.000   -0.050   0.0    0.0    0.0    0.0    0.0    0.0   ! Battery
