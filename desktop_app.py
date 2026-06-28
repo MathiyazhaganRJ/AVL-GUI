@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QSplitter, QHeaderView,
                              QTabWidget, QComboBox, QLineEdit, QCheckBox, 
-                             QGridLayout, QFileDialog, QMessageBox, QGroupBox, QPlainTextEdit)
+                             QGridLayout, QFileDialog, QMessageBox, QGroupBox, QPlainTextEdit, QProgressBar)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QFont
 import os
@@ -42,6 +42,38 @@ class MplBlueprintCanvas(FigureCanvas):
         self.ax_front = self.fig.add_subplot(self.gs[1, 0])
         self.ax_side = self.fig.add_subplot(self.gs[1, 1])
         super().__init__(self.fig)
+
+class AlphaSweepWorker(QThread):
+    progress = pyqtSignal(int)
+    result = pyqtSignal(list, list, list, list) # alphas, CLs, CDs, Cms
+    error = pyqtSignal(str)
+    
+    def __init__(self, avl_file, mass_file, start_a, end_a, step):
+        super().__init__()
+        self.avl_file = avl_file
+        self.mass_file = mass_file
+        self.start_a = start_a
+        self.end_a = end_a
+        self.step = step
+        
+    def run(self):
+        try:
+            alphas = np.arange(self.start_a, self.end_a + self.step, self.step)
+            CLs, CDs, Cms = [], [], []
+            
+            for i, a in enumerate(alphas):
+                res = run_avl_analysis(self.avl_file, self.mass_file, alpha=float(a))
+                CLs.append(res.get('CL', 0))
+                CDs.append(res.get('CD', 0))
+                Cms.append(res.get('Cm', 0))
+                
+                # Emit progress percentage
+                pct = int((i + 1) / len(alphas) * 100)
+                self.progress.emit(pct)
+                
+            self.result.emit(list(alphas), CLs, CDs, Cms)
+        except Exception as e:
+            self.error.emit(str(e))
 
 class AVLDesktopApp(QMainWindow):
     def __init__(self):
@@ -145,6 +177,8 @@ class AVLDesktopApp(QMainWindow):
         text_lay.addWidget(text_splitter)
         self.right_tabs.addTab(text_tab, "  Raw Text  ")
         
+        self.setup_analysis_tab()
+        
         self.terminal_tab = AVLTerminal(main_app=self)
         self.right_tabs.addTab(self.terminal_tab, "  AVL Terminal  ")
         
@@ -215,12 +249,13 @@ class AVLDesktopApp(QMainWindow):
 
     def init_data_model(self):
         self.plane = Airplane(
-            name="Shark Hawk Concept",
+            name="Shark Hawk Glider",
             surfaces=[
                 Surface(
                     name="Main Wing", origin=(0.0, 0.0, 0.0), incidence=1.5,
                     sections=[
-                        Section(y=0.0, chord=0.3, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1)),
+                        Section(y=0.0, chord=0.3, airfoil="NACA 2412"),
+                        Section(y=0.6, chord=0.22, offset_x=0.02, dihedral=3.0, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1)),
                         Section(y=1.0, chord=0.15, offset_x=0.05, twist=-2.0, dihedral=3.0, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1))
                     ]
                 ),
@@ -228,7 +263,14 @@ class AVLDesktopApp(QMainWindow):
                     name="H-Tail", origin=(1.2, 0.0, 0.0), incidence=-1.0,
                     sections=[
                         Section(y=0.0, chord=0.1, airfoil="NACA 0012", control=ControlSurface("Elevator", 0.7, 1)),
-                        Section(y=0.3, chord=0.08, offset_x=0.02, airfoil="NACA 0012")
+                        Section(y=0.3, chord=0.08, offset_x=0.02, airfoil="NACA 0012", control=ControlSurface("Elevator", 0.7, 1))
+                    ]
+                ),
+                Surface(
+                    name="V-Tail", origin=(1.2, 0.0, 0.0), incidence=0.0, duplicate_y=False,
+                    sections=[
+                        Section(y=0.0, chord=0.12, dihedral=90.0, airfoil="NACA 0012", control=ControlSurface("Rudder", 0.7, 1)),
+                        Section(y=0.25, chord=0.08, offset_x=0.04, dihedral=90.0, airfoil="NACA 0012", control=ControlSurface("Rudder", 0.7, 1))
                     ]
                 )
             ],
@@ -373,6 +415,127 @@ class AVLDesktopApp(QMainWindow):
         lay.addWidget(btn_export_mass)
         
         self.left_tabs.addTab(mass_widget, "  Mass & Inertia  ")
+
+    def setup_analysis_tab(self):
+        analysis_widget = QWidget()
+        lay = QVBoxLayout(analysis_widget)
+        lay.setContentsMargins(15, 15, 15, 15)
+        
+        # Alpha Sweep group
+        sweep_group = QGroupBox("Automated Alpha Sweep")
+        sweep_lay = QGridLayout(sweep_group)
+        
+        sweep_lay.addWidget(QLabel("Start Alpha (deg):"), 0, 0)
+        self.edit_alpha_start = QLineEdit("-5.0")
+        sweep_lay.addWidget(self.edit_alpha_start, 0, 1)
+        
+        sweep_lay.addWidget(QLabel("End Alpha (deg):"), 0, 2)
+        self.edit_alpha_end = QLineEdit("15.0")
+        sweep_lay.addWidget(self.edit_alpha_end, 0, 3)
+        
+        sweep_lay.addWidget(QLabel("Step (deg):"), 1, 0)
+        self.edit_alpha_step = QLineEdit("1.0")
+        sweep_lay.addWidget(self.edit_alpha_step, 1, 1)
+        
+        self.btn_run_sweep = QPushButton("Run Alpha Sweep")
+        self.btn_run_sweep.setObjectName("primary_btn")
+        self.btn_run_sweep.clicked.connect(self.run_alpha_sweep)
+        sweep_lay.addWidget(self.btn_run_sweep, 1, 2)
+        
+        self.sweep_progress = QProgressBar()
+        self.sweep_progress.setValue(0)
+        self.sweep_progress.setVisible(False)
+        sweep_lay.addWidget(self.sweep_progress, 2, 0, 1, 4)
+        
+        lay.addWidget(sweep_group)
+        
+        # Plots area for sweep results
+        self.sweep_fig = Figure(figsize=(8, 4), dpi=100)
+        # We will set the facecolor dynamically in refresh_ui or on_sweep_completed
+        
+        import matplotlib.gridspec as gridspec
+        gs = gridspec.GridSpec(1, 3, figure=self.sweep_fig)
+        self.ax_cl_alpha = self.sweep_fig.add_subplot(gs[0, 0])
+        self.ax_cd_alpha = self.sweep_fig.add_subplot(gs[0, 1])
+        self.ax_cm_alpha = self.sweep_fig.add_subplot(gs[0, 2])
+        
+        self.sweep_canvas = FigureCanvas(self.sweep_fig)
+        lay.addWidget(self.sweep_canvas)
+        
+        self.right_tabs.addTab(analysis_widget, "  Analysis Tools  ")
+
+    def run_alpha_sweep(self):
+        try:
+            start_a = float(self.edit_alpha_start.text())
+            end_a = float(self.edit_alpha_end.text())
+            step = float(self.edit_alpha_step.text())
+        except ValueError:
+            QMessageBox.warning(self, "Input Error", "Please enter valid numbers for the sweep parameters.")
+            return
+            
+        # Serialize current geometry and mass to temporary files
+        avl_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_sweep.avl")
+        mass_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_sweep.mass")
+        
+        self.plane.to_avl_file(avl_file)
+        self.plane.to_mass_file(mass_file)
+        
+        self.btn_run_sweep.setEnabled(False)
+        self.sweep_progress.setVisible(True)
+        self.sweep_progress.setValue(0)
+        
+        self.worker = AlphaSweepWorker(avl_file, mass_file, start_a, end_a, step)
+        self.worker.progress.connect(self.sweep_progress.setValue)
+        self.worker.result.connect(self.on_sweep_completed)
+        self.worker.error.connect(self.on_sweep_error)
+        self.worker.start()
+        
+    def on_sweep_completed(self, alphas, CLs, CDs, Cms):
+        self.btn_run_sweep.setEnabled(True)
+        self.sweep_progress.setVisible(False)
+        
+        bg_color = "#2C2C2E" if self.dark_mode else "#FFFFFF"
+        text_color = "#F5F5F7" if self.dark_mode else "#1D1D1F"
+        grid_color = "#38383A" if self.dark_mode else "#D2D2D7"
+        
+        self.sweep_fig.patch.set_facecolor(bg_color)
+        
+        for ax in [self.ax_cl_alpha, self.ax_cd_alpha, self.ax_cm_alpha]:
+            ax.clear()
+            ax.set_facecolor(bg_color)
+            ax.grid(True, linestyle='--', alpha=0.8, color=grid_color)
+            ax.xaxis.label.set_color(text_color)
+            ax.yaxis.label.set_color(text_color)
+            ax.tick_params(colors=text_color)
+            for spine in ax.spines.values():
+                spine.set_color(grid_color)
+                
+        # CL vs Alpha
+        self.ax_cl_alpha.plot(alphas, CLs, color='#0A84FF', linewidth=2, marker='o', markersize=4)
+        self.ax_cl_alpha.set_title('Lift Coefficient (CL)', color=text_color, fontsize=10, pad=10)
+        self.ax_cl_alpha.set_xlabel('Alpha (deg)')
+        self.ax_cl_alpha.set_ylabel('CL')
+        
+        # CD vs Alpha
+        self.ax_cd_alpha.plot(alphas, CDs, color='#FF3B30', linewidth=2, marker='o', markersize=4)
+        self.ax_cd_alpha.set_title('Drag Coefficient (CD)', color=text_color, fontsize=10, pad=10)
+        self.ax_cd_alpha.set_xlabel('Alpha (deg)')
+        self.ax_cd_alpha.set_ylabel('CD')
+        
+        # Cm vs Alpha
+        self.ax_cm_alpha.plot(alphas, Cms, color='#34C759', linewidth=2, marker='o', markersize=4)
+        self.ax_cm_alpha.set_title('Pitching Moment (Cm)', color=text_color, fontsize=10, pad=10)
+        self.ax_cm_alpha.set_xlabel('Alpha (deg)')
+        self.ax_cm_alpha.set_ylabel('Cm')
+        
+        self.sweep_fig.tight_layout()
+        self.sweep_canvas.draw()
+        
+    def on_sweep_error(self, err_msg):
+        self.btn_run_sweep.setEnabled(True)
+        self.sweep_progress.setVisible(False)
+        QMessageBox.critical(self, "Sweep Error", f"An error occurred during the sweep:\n\n{err_msg}")
+
 
     def refresh_ui(self):
         self.edit_name.blockSignals(True)
@@ -896,6 +1059,32 @@ class OutputReaderThread(QThread):
                 break
             self.new_output.emit(char)
 
+class HistoryLineEdit(QLineEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.history = []
+        self.history_idx = 0
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Up:
+            if self.history and self.history_idx > 0:
+                self.history_idx -= 1
+                self.setText(self.history[self.history_idx])
+        elif event.key() == Qt.Key_Down:
+            if self.history and self.history_idx < len(self.history) - 1:
+                self.history_idx += 1
+                self.setText(self.history[self.history_idx])
+            elif self.history_idx == len(self.history) - 1:
+                self.history_idx += 1
+                self.clear()
+        else:
+            super().keyPressEvent(event)
+
+    def append_history(self, text):
+        if text and (not self.history or self.history[-1] != text):
+            self.history.append(text)
+        self.history_idx = len(self.history)
+
 class AVLTerminal(QWidget):
     def __init__(self, main_app=None, parent=None):
         super().__init__(parent)
@@ -911,10 +1100,12 @@ class AVLTerminal(QWidget):
         
         self.display = QPlainTextEdit()
         self.display.setReadOnly(True)
-        self.display.setStyleSheet("font-family: Consolas, monospace; background-color: #1E1E1E; color: #D4D4D4; font-size: 13px;")
+        self.display.setObjectName("terminal_display")
+        self.display.setStyleSheet("QPlainTextEdit#terminal_display { font-family: Consolas, monospace; background-color: #0C0C0C; color: #CCCCCC; font-size: 13px; border: 1px solid #333333; padding: 5px; }")
         
-        self.input = QLineEdit()
-        self.input.setStyleSheet("font-family: Consolas, monospace; background-color: #1E1E1E; color: #FFFFFF; font-size: 14px; padding: 5px;")
+        self.input = HistoryLineEdit()
+        self.input.setObjectName("terminal_input")
+        self.input.setStyleSheet("QLineEdit#terminal_input { font-family: Consolas, monospace; background-color: #0C0C0C; color: #CCCCCC; font-size: 14px; border: 1px solid #333333; padding: 5px; }")
         self.input.setPlaceholderText("Type AVL command here and press Enter...")
         self.input.returnPressed.connect(self.send_command)
         
@@ -962,25 +1153,14 @@ class AVLTerminal(QWidget):
         
     def send_command(self):
         if self.process and self.process.poll() is None:
-            cmd = self.input.text() + "\n"
+            raw_cmd = self.input.text()
+            self.input.append_history(raw_cmd)
+            cmd = raw_cmd + "\n"
             self.process.stdin.write(cmd)
             self.process.stdin.flush()
             self.display.moveCursor(QTextCursor.End)
             
-            # Apply cyan bold color for user input
-            fmt = QTextCharFormat()
-            fmt.setForeground(QColor("#00FFFF"))
-            fmt.setFontWeight(QFont.Bold)
-            self.display.setCurrentCharFormat(fmt)
-            
             self.display.insertPlainText(cmd)
-            
-            # Revert to standard terminal text color for AVL output
-            fmt = QTextCharFormat()
-            fmt.setForeground(QColor("#D4D4D4"))
-            fmt.setFontWeight(QFont.Normal)
-            self.display.setCurrentCharFormat(fmt)
-            
             self.input.clear()
 
 if __name__ == "__main__":
