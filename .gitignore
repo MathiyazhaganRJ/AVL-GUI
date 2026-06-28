@@ -4,7 +4,6 @@
 *.st
 plot.ps
 __pycache__/
-avl.exe
 current_run
 *.json
 test_ui.py
