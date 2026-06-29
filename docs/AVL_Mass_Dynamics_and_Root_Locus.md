@@ -30,7 +30,7 @@ You cannot enter the `.MODE` menu until you have successfully "trimmed" the airc
 4.  **Calculate Eigenvalues:**
     *   Type `N` (Calculate Eigenvalues). AVL will output the mathematical poles (Eigenvalues) for the Phugoid, Short Period, Dutch Roll, Roll Subsidence, and Spiral modes directly to the terminal.
 5.  **Plot the Root Locus:**
-    *   Type `R` (Root Locus Plot). AVL will open an interactive graphical plot showing the poles on the Complex Plane.
+    *   Type `P` (Plot root locus). AVL will open an interactive graphical plot showing the poles on the Complex Plane. (Note: You can type `B` to blow up/zoom the window, and `R` to reset it to normal size).
 
 ---
 
