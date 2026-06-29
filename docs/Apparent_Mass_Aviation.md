@@ -1,5 +1,7 @@
 # Apparent Mass in Aviation: A Deep Dive
 
+> *"Apparent Mass is simply how the mass of the surrounding environment temporarily affects and adds itself to the actual mass of the vehicle."*
+
 In classical flight dynamics, we usually assume that the force required to accelerate an airplane is simply $F = m \cdot a$, where $m$ is the physical weight of the airplane itself. 
 
 However, fluid dynamics introduces a fascinating complication: **Apparent Mass** (also known as *Added Mass* or *Virtual Mass*).
