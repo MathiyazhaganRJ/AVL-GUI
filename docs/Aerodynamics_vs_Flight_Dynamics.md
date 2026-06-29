@@ -67,17 +67,3 @@ This is the standard architecture for high-fidelity SITL (Software-in-the-Loop) 
 Unlike OpenVSP, both AVL and XFLR5 possess internal state-space Eigenvalue solvers. They can calculate both the aerodynamics *and* the resulting 6-DOF dynamic modes natively, provided you explicitly supply the rigid body properties.
 1.  **AVL:** AVL computes the aerodynamic derivatives via Vortex Lattice Math. To transition to flight dynamics, you must load a `.mass` file containing your airframe's inertia tensor. When you execute the `MODE` command, AVL constructs the classical state-space matrix ($[A]$ matrix), scaling the aerodynamic forces by the inverse of your mass matrix. It solves the determinant $\det(sI - A) = 0$ to output the Eigenvalues (damping ratios $\zeta$ and natural frequencies $\omega_n$) for the Phugoid, Short Period, and Dutch Roll directly to the terminal.
 2.  **XFLR5:** XFLR5 features a "Plane Inertia" module where the user defines component point masses. During a "Type 4 (Stability)" or "Type 7" analysis, XFLR5 first resolves the aerodynamic derivatives, then internally solves the linear equations of motion against the defined inertia to plot the Root Locus natively in the graphical interface.
-
----
-
-## 6. AVL Kinematic Constraint Macros (C1 & C2)
-
-While standard stability derivatives require isolating variables (e.g., only changing $\alpha$ while holding $q=0$), real-world maneuvers are highly coupled. To simulate this without manual trigonometry, the AVL `.OPER` menu provides two kinematic "Setup Wizards" that automatically calculate and constrain the coupled rotational rates.
-
-### C1: Level / Banked Turn (Thermal Soaring)
-*   **The Physics:** An aircraft in a steady banked turn does not just roll; it constantly pitches up to maintain altitude and constantly yaws to follow the circular path. 
-*   **How it Works:** The `C1` command prompts for a Bank Angle and Velocity. AVL's internal kinematics engine instantly calculates the exact Pitch Rate ($q$) and Yaw Rate ($r$) required to perfectly trace that circle in 3D space. It locks these into the state matrix, allowing you to easily trim the Elevator and Rudder required to hold the thermal.
-
-### C2: Steady Pitch Rate (High-G Pull-Up / Loop)
-*   **The Physics:** Pulling out of a dive or executing a loop requires a sustained pitch rate, generating massive pitch damping ($C_{m_q}$) across the tail.
-*   **How it Works:** The `C2` command prompts for a Load Factor (G-force) or turn radius. AVL automatically calculates the required steady-state Pitch Rate ($q$) to sustain that load factor. You can then constrain Pitching Moment ($C_m = 0$) to verify if the elevator possesses enough physical authority to pull the requested Gs against the resulting aerodynamic damping.

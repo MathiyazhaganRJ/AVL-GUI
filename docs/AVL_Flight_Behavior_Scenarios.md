@@ -70,12 +70,14 @@ Below are the most critical simulation protocols (constraint matrices) used by a
 ---
 
 ## Scenario 7: Banked Thermal Soaring (The C1 Command)
-*Simulate the aircraft in a continuous, banked circle (like riding a thermal).*
+*Simulate the aircraft in a continuous, steady banked circle (like riding a thermal).*
 
-**Flight State Configuration:**
-*   Inside the `.OPER` menu, type `c1`. 
-*   AVL will guide you through a wizard. It asks for your `Velocity` (or `C_L`), your `Bank Angle` (e.g., `30.0` degrees), and the `Air Density`.
-*   **Result:** AVL automatically sets up a massive combined matrix of Alpha, Beta, Pitch Rate (q), and Yaw Rate (r) to mathematically fly the plane in a perfect circle! You can then constrain your Aileron to `rm 0` and Rudder to `ym 0` to see exactly what stick inputs are required to hold the thermal.
+**The Physics:** An aircraft in a steady banked turn does not just roll; it constantly pitches up to maintain altitude and constantly yaws to follow the circular path. This requires coupled rotational rates ($q$ and $r$).
+
+**Flight State Configuration (The C1 Wizard):**
+*   Inside the `.OPER` menu, type `C1`. 
+*   AVL will prompt you for a `Bank Angle` (e.g., `30.0` degrees), a `Velocity` (or `C_L`), and the `Air Density`.
+*   **Result:** AVL's internal kinematics engine instantly calculates the exact Pitch Rate ($q$) and Yaw Rate ($r$) required to perfectly trace that circle in 3D space. It automatically locks these rates into the state matrix. You can then constrain your Elevator to `pm 0` and Rudder to `ym 0` to see exactly what control deflections are required to hold the plane in that thermal.
 
 ---
 
@@ -88,3 +90,15 @@ Below are the most critical simulation protocols (constraint matrices) used by a
 *   Type `z` (to set Z-symmetry / ground plane). Type `0` to set the ground plane exactly at Z=0. (Make sure your airplane's Z-coordinates are shifted up to the landing gear height!)
 *   Enter `.OPER` and run Scenario 1. 
 *   **Result:** You will see your `CDind` drop massively, and your `Cma` change due to the downwash bouncing off the runway.
+
+---
+
+## Scenario 9: Steady Pitch Rate / High-G Loop (The C2 Command)
+*Find out how much elevator authority you need to pull out of a steep dive or execute a sustained loop.*
+
+**The Physics:** Pulling out of a dive requires a sustained pitch rate, generating massive pitch damping ($C_{m_q}$) across the tail that fights the elevator.
+
+**Flight State Configuration (The C2 Wizard):**
+*   Inside the `.OPER` menu, type `C2`.
+*   AVL will prompt you for a `Velocity` and a `Load Factor` (e.g., `3.0` for 3 Gs) or a turn radius.
+*   **Result:** AVL automatically calculates the required steady-state Pitch Rate ($q$) to sustain that load factor and locks it into the matrix. You can then constrain your Elevator to `pm 0` to verify if the control surface physically possesses enough authority to pull the requested Gs against the resulting aerodynamic damping.
