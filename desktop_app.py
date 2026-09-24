@@ -1097,7 +1097,7 @@ class AVLDesktopApp(QMainWindow):
                 surfaces=surfaces,
                 point_masses=point_masses
             )
-            
+            self.txt_notes.setPlainText(self.plane.description)
             self.current_surface_idx = 0
             self.refresh_ui()
             self.refresh_surface_ui()
