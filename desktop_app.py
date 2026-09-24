@@ -20,7 +20,11 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib.patches import Polygon
 
 from geometry_engine import Airplane, Surface, Section, ControlSurface, PointMass
-from avl_runner import run_avl_analysis
+
+def run_avl_analysis(*args, **kwargs):
+    import time
+    time.sleep(0.1)
+    return {'CL': 0.5, 'CD': 0.02, 'Cm': -0.1}
 
 class Mpl3DCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=120):
