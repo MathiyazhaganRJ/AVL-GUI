@@ -495,6 +495,8 @@ class AVLDesktopApp(QMainWindow):
         gb_notes = QGroupBox("Design Notes / Description")
         gb_notes_lay = QVBoxLayout(gb_notes)
         self.txt_notes = QPlainTextEdit()
+        self.txt_notes.setPlainText(self.plane.description)
+        self.txt_notes.textChanged.connect(lambda: setattr(self.plane, 'description', self.txt_notes.toPlainText()))
         self.txt_notes.setPlaceholderText("Enter design specifications, configuration notes, or descriptions here...")
         self.txt_notes.setMinimumHeight(150)
         gb_notes_lay.addWidget(self.txt_notes)
@@ -1096,7 +1098,6 @@ class AVLDesktopApp(QMainWindow):
                 point_masses=point_masses
             )
             
-            self.txt_notes.setPlainText(self.plane.description)
             self.current_surface_idx = 0
             self.refresh_ui()
             self.refresh_surface_ui()
