@@ -1051,6 +1051,7 @@ class AVLDesktopApp(QMainWindow):
                 QMessageBox.critical(self, "Error", str(e))
 
     def save_project(self):
+        self.plane.description = self.txt_notes.toPlainText()
         options = QFileDialog.Options()
         filepath, _ = QFileDialog.getSaveFileName(self, "Save Project", f"{self.plane.name.replace(' ','_')}_project.json", "JSON Files (*.json)", options=options)
         if not filepath: return
@@ -1086,6 +1087,7 @@ class AVLDesktopApp(QMainWindow):
                 
             self.plane = Airplane(
                 name=data.get('name', 'Imported Airplane'),
+                description=data.get('description', ''),
                 s_ref=data.get('s_ref', 1.0),
                 c_ref=data.get('c_ref', 1.0),
                 b_ref=data.get('b_ref', 1.0),
@@ -1094,6 +1096,7 @@ class AVLDesktopApp(QMainWindow):
                 point_masses=point_masses
             )
             
+            self.txt_notes.setPlainText(self.plane.description)
             self.current_surface_idx = 0
             self.refresh_ui()
             self.refresh_surface_ui()

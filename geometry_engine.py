@@ -169,6 +169,7 @@ class Surface:
 @dataclass
 class Airplane:
     name: str
+    description: str = ""
     mach: float = 0.0
     iy_sym: int = 0
     iz_sym: int = 0
