@@ -12,6 +12,7 @@ import subprocess
 import json
 from dataclasses import asdict
 import matplotlib
+import webbrowser
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -95,15 +96,18 @@ class AVLDesktopApp(QMainWindow):
         top_bar = QHBoxLayout()
         btn_load = QPushButton("Load Project")
         btn_save = QPushButton("Save Project")
+        btn_docs = QPushButton("AVL Documentation")
         chk_dark = QCheckBox("Dark Mode")
         chk_dark.setChecked(True)
         
         btn_load.clicked.connect(self.load_project)
         btn_save.clicked.connect(self.save_project)
+        btn_docs.clicked.connect(lambda: webbrowser.open("https://web.mit.edu/drela/Public/web/avl/"))
         chk_dark.stateChanged.connect(lambda state: self.apply_theme(state == Qt.Checked))
         
         top_bar.addWidget(btn_load)
         top_bar.addWidget(btn_save)
+        top_bar.addWidget(btn_docs)
         top_bar.addStretch()
         top_bar.addWidget(chk_dark)
         
