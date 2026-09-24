@@ -24,6 +24,8 @@ class Section:
     dihedral: float = 0.0            # Dihedral angle to the NEXT section
     twist: float = 0.0               # Pitch angle / incidence of this section
     airfoil: str = "NACA 0012"
+    nspan: int = 5                   # Spanwise vortices to next section
+    sspace: float = -2.0             # Spanwise spacing distribution
     control: Optional[ControlSurface] = None
 
     def __post_init__(self):
@@ -36,6 +38,8 @@ class Surface:
     origin: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     incidence: float = 0.0           # Angle of incidence for the whole surface
     duplicate_y: bool = True         # Symmetry across XZ plane
+    nchord: int = 10                 # Chordwise vortices
+    cspace: float = 1.0              # Chordwise spacing distribution
     sections: List[Section] = field(default_factory=list)
 
     def __post_init__(self):
@@ -107,7 +111,7 @@ class Surface:
         lines = [
             f"SURFACE",
             f"{self.name}",
-            f"10 1.0" # Nchord, Cspace
+            f"{self.nchord} {self.cspace:.4f}" # Nchord, Cspace
         ]
         
         if self.duplicate_y:
@@ -138,11 +142,11 @@ class Surface:
             z_abs = self.origin[2] + z_rel_accum
             
             # Nspan and Sspace logic (0 for tip section)
-            nspan = 5 if i < len(self.sections) - 1 else 0
-            sspace = -2.0 if i < len(self.sections) - 1 else 0.0
+            nspan_val = sec.nspan if i < len(self.sections) - 1 else 0
+            sspace_val = sec.sspace if i < len(self.sections) - 1 else 0.0
             
             lines.append(f"SECTION")
-            lines.append(f"{x_abs:.4f} {self.origin[1] + current_y:.4f} {z_abs:.4f} {sec.chord:.4f} {sec.twist:.4f} {nspan} {sspace}")
+            lines.append(f"{x_abs:.4f} {self.origin[1] + current_y:.4f} {z_abs:.4f} {sec.chord:.4f} {sec.twist:.4f} {nspan_val} {sspace_val:.4f}")
             
             # Airfoil handling
             af = sec.airfoil.strip()
@@ -165,6 +169,11 @@ class Surface:
 @dataclass
 class Airplane:
     name: str
+    mach: float = 0.0
+    iy_sym: int = 0
+    iz_sym: int = 0
+    z_sym: float = 0.0
+    cdp: float = 0.01
     s_ref: float = 1.0
     c_ref: float = 1.0
     b_ref: float = 1.0
@@ -221,11 +230,11 @@ class Airplane:
             
         lines = [
             self.name,
-            "0.0",
-            "0 0 0.0",
+            f"{self.mach:.4f}",
+            f"{self.iy_sym} {self.iz_sym} {self.z_sym:.4f}",
             f"{self.s_ref:.4f} {self.c_ref:.4f} {self.b_ref:.4f}",
             f"{self.cg[0]:.4f} {self.cg[1]:.4f} {self.cg[2]:.4f}",
-            "0.01" # Cdp
+            f"{self.cdp:.4f}"
         ]
         
         full_text = "\n".join(lines) + "\n"

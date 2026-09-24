@@ -4,9 +4,9 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QSplitter, QHeaderView,
                              QTabWidget, QComboBox, QLineEdit, QCheckBox, 
-                             QGridLayout, QFileDialog, QMessageBox, QGroupBox, QPlainTextEdit, QProgressBar)
+                             QGridLayout, QFileDialog, QMessageBox, QGroupBox, QPlainTextEdit, QProgressBar, QScrollArea, QFrame, QListView, QInputDialog, QMenu, QAction)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QFont
+from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QIcon
 import os
 import subprocess
 import json
@@ -28,8 +28,8 @@ class Mpl3DCanvas(FigureCanvas):
         self.fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
         self.ax = self.fig.add_subplot(111, projection='3d')
         self.ax.set_facecolor('#FFFFFF')
-        # Pure CAD look - hide axis completely
         self.ax.set_axis_off()
+        self.ax.view_init(elev=25, azim=-45)
         super().__init__(self.fig)
 
 class MplBlueprintCanvas(FigureCanvas):
@@ -79,6 +79,7 @@ class AVLDesktopApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AVL Design Studio")
+        self.setWindowIcon(QIcon("icon.png"))
         self.resize(1400, 900)
         
         self.init_data_model()
@@ -126,6 +127,7 @@ class AVLDesktopApp(QMainWindow):
         toolbar_3d = QHBoxLayout()
         toolbar_3d.addWidget(QLabel("Render Style:"))
         self.combo_render_style = QComboBox()
+        self.combo_render_style.setView(QListView())
         self.combo_render_style.addItems(["Solid Shaded", "Wireframe", "Ghost (Transparent)"])
         self.combo_render_style.currentIndexChanged.connect(lambda _: self.update_plots())
         toolbar_3d.addWidget(self.combo_render_style)
@@ -139,7 +141,7 @@ class AVLDesktopApp(QMainWindow):
             btn.setStyleSheet("padding: 4px 8px;")
             toolbar_3d.addWidget(btn)
             
-        btn_iso.clicked.connect(lambda: self.set_3d_view(25, -125))
+        btn_iso.clicked.connect(lambda: self.set_3d_view(25, -45))
         btn_top.clicked.connect(lambda: self.set_3d_view(90, -90))
         btn_front.clicked.connect(lambda: self.set_3d_view(0, 0))
         btn_side.clicked.connect(lambda: self.set_3d_view(0, -90))
@@ -177,74 +179,101 @@ class AVLDesktopApp(QMainWindow):
         text_lay.addWidget(text_splitter)
         self.right_tabs.addTab(text_tab, "  Raw Text  ")
         
-        self.setup_analysis_tab()
-        
-        self.terminal_tab = AVLTerminal(main_app=self)
-        self.right_tabs.addTab(self.terminal_tab, "  AVL Terminal  ")
+        # Removed Analysis and Terminal tabs per request to focus strictly on geometry generation
         
         splitter.addWidget(self.right_tabs)
         
-        splitter.setSizes([450, 950])
+        splitter.setSizes([950, 450])
         self.apply_theme(dark_mode=True)
         self.refresh_ui()
 
     def apply_theme(self, dark_mode=False):
         self.dark_mode = dark_mode
         if dark_mode:
-            bg_main = "#1C1C1E"
-            bg_card = "#2C2C2E"
-            border = "#38383A"
-            text_c = "#F5F5F7"
-            text_dim = "#86868B"
-            accent = "#0A84FF"
+            bg_main = "#232428"          # XFLR5 window bg
+            bg_card = "#2B2D32"          # Panels
+            bg_input = "#1C1D21"         # Inputs
+            bg_plot = "#000000"          # Pure black for 3D View
+            border = "#151619"           # Deep dark borders
+            border_light = "#41444A"     # Lighter borders for button edges
+            text_c = "#D4D4D4"
+            text_dim = "#919191"
+            header_bg = "#32353B"
+            accent_green = "#27ae60"     # Bright neon green
         else:
-            bg_main = "#F5F5F7"
+            bg_main = "#F3F3F3"
             bg_card = "#FFFFFF"
-            border = "#D2D2D7"
-            text_c = "#1D1D1F"
-            text_dim = "#86868B"
-            accent = "#0071E3"
+            bg_input = "#FFFFFF"
+            bg_plot = "#FFFFFF"
+            border = "#CCCCCC"
+            border_light = "#E0E0E0"
+            text_c = "#1E1E1E"
+            text_dim = "#6D6D6D"
+            header_bg = "#E5E5E5"
+            accent_green = "#27ae60"
             
         self.setStyleSheet(f"""
-            QMainWindow {{ background-color: {bg_main}; color: {text_c}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
-            QWidget {{ color: {text_c}; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+            QMainWindow, QDialog {{ background-color: {bg_main}; color: {text_c}; font-family: "Cascadia Code", "Consolas", monospace; }}
+            QWidget {{ color: {text_c}; font-size: 12px; font-family: "Cascadia Code", "Consolas", monospace; }}
             QMessageBox {{ background-color: {bg_card}; color: {text_c}; }}
             QMessageBox QLabel {{ color: {text_c}; background-color: transparent; }}
-            QTabWidget::pane {{ border: 1px solid {border}; background-color: {bg_card}; border-radius: 8px; top: -1px; }}
+            QInputDialog QLabel {{ background-color: transparent; }}
+            
+            QTabWidget::pane {{ border: 1px solid {border}; background-color: {bg_main}; top: -1px; }}
             QTabBar:focus {{ outline: none; }}
-            QTabBar::tab {{ background: {bg_main}; padding: 6px 12px; border: 1px solid {border}; border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 2px; outline: none; color: {text_dim}; font-weight: bold; }}
-            QTabBar::tab:selected {{ background: {bg_card}; border-bottom-color: {bg_card}; color: {text_c}; font-weight: bold; }}
-            QTableWidget, QTableView {{ background-color: {bg_card}; alternate-background-color: {bg_main}; color: {text_c}; gridline-color: {border}; border: 1px solid {border}; border-radius: 6px; selection-background-color: {accent}; selection-color: white; outline: none; }}
-            QTableView::item {{ background-color: {bg_card}; border: none; padding: 2px; }}
+            QTabBar::tab {{ background: {bg_main}; padding: 6px 14px; border: 1px solid {border}; margin-right: 1px; color: {text_dim}; font-size: 12px; }}
+            QTabBar::tab:selected {{ background: {bg_card}; border-bottom-color: {bg_card}; color: {text_c}; font-weight: bold; border-top: 2px solid {accent_green}; }}
+            QTabBar::tab:hover:!selected {{ background: {header_bg}; }}
+            
+            QTableWidget, QTableView {{ font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px; background-color: {bg_input}; alternate-background-color: {bg_main}; color: {text_c}; gridline-color: {border}; border: 1px solid {border}; selection-background-color: #4A4D54; selection-color: white; outline: none; border-radius: 2px; }}
+            QTableView::item {{ background-color: {bg_input}; border: none; padding: 3px; }}
             QTableView::item:alternate {{ background-color: {bg_main}; }}
-            QTableView::item:selected {{ background-color: {accent}; color: white; }}
-            QTableWidget::item:focus {{ outline: none; }}
-            QTableCornerButton::section {{ background-color: {bg_main}; border: none; border-bottom: 1px solid {border}; border-right: 1px solid {border}; }}
-            QHeaderView, QHeaderView::section {{ background-color: {bg_main}; padding: 4px; border: none; border-bottom: 1px solid {border}; border-right: 1px solid {border}; font-weight: 600; color: {text_c}; outline: none; }}
-            QLineEdit, QComboBox {{ background-color: {bg_card}; border: 1px solid {border}; padding: 6px 10px; border-radius: 6px; selection-background-color: {accent}; color: {text_c}; min-height: 22px; }}
-            QComboBox QAbstractItemView {{ background-color: {bg_card}; color: {text_c}; border: 1px solid {border}; selection-background-color: {accent}; border-radius: 6px; }}
-            QLineEdit:focus, QComboBox:focus {{ border: 1.5px solid {accent}; }}
-            QPushButton {{ background-color: {bg_card}; color: {text_c}; padding: 6px 14px; border-radius: 6px; font-weight: 600; border: 1px solid {border}; outline: none; }}
-            QPushButton:hover {{ background-color: {border}; }}
-            QPushButton:pressed {{ background-color: {bg_main}; }}
-            QPushButton#primary_btn {{ background-color: {accent}; color: white; border: none; }}
-            QPushButton#primary_btn:hover {{ background-color: #0077ED; }}
-            QPushButton#danger_btn {{ background-color: #FF3B30; color: white; border: none; }}
-            QPushButton#danger_btn:hover {{ background-color: #FF453A; }}
-            QPushButton#success_btn {{ background-color: #34C759; color: white; border: none; }}
-            QPushButton#success_btn:hover {{ background-color: #30D158; }}
-            QGroupBox {{ border: 1px solid {border}; border-radius: 8px; margin-top: 14px; font-weight: 600; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; color: {text_dim}; }}
-            QSplitter::handle {{ background-color: {border}; width: 1px; }}
-            QPlainTextEdit {{ background-color: {bg_card}; color: {text_c}; font-family: "SF Mono", Consolas, monospace; font-size: 13px; border: 1px solid {border}; outline: none; border-radius: 6px; padding: 6px; }}
+            QTableView::item:selected {{ background-color: #4A4D54; color: white; }}
+            QHeaderView {{ background-color: {bg_card}; border: none; border-bottom: 1px solid {border}; }}
+            QHeaderView::section {{ font-family: "Cascadia Code", "Consolas", monospace; background-color: transparent; padding: 4px; border: none; border-right: 1px solid {border}; color: {text_dim}; font-weight: bold; font-size: 12px; }}
+            QTableCornerButton::section {{ background-color: {bg_card}; border: none; border-bottom: 1px solid {border}; border-right: 1px solid {border}; }}
+            
+            QLineEdit, QComboBox {{ font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px; background-color: {bg_input}; border: 1px solid {border}; padding: 4px 6px; color: {text_c}; min-height: 20px; border-radius: 2px; }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox::down-arrow {{ image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 4px solid {text_dim}; margin-right: 8px; }}
+            QLineEdit:focus, QComboBox:focus {{ border: 1px solid #5A5D65; background-color: {bg_input}; }}
+            
+            QPushButton {{ background-color: {header_bg}; color: {text_c}; padding: 5px 12px; border: 1px solid {border}; border-top: 1px solid {border_light}; border-radius: 2px; }}
+            QPushButton:hover {{ background-color: #3C3F46; }}
+            QPushButton:pressed {{ background-color: {bg_main}; border-top: 1px solid {border}; }}
+            
+            QComboBox QListView {{ background-color: {bg_input}; color: {text_c}; border: 1px solid {border}; outline: none; }}
+            QComboBox QListView::item {{ background-color: {bg_input}; color: {text_c}; padding: 4px; border: none; }}
+            QComboBox QListView::item:selected {{ background-color: {border_light}; color: {text_c}; }}
+            
+            QPushButton#primary_btn {{ background-color: {header_bg}; color: {text_c}; }}
+            QPushButton#danger_btn {{ background-color: #D32F2F; color: white; border: 1px solid #B71C1C; border-top: 1px solid #EF5350; }}
+            QPushButton#danger_btn:hover {{ background-color: #E53935; }}
+            QPushButton#success_btn {{ background-color: {accent_green}; color: white; border: 1px solid #2B6B3E; border-top: 1px solid #5CBA7A; padding: 8px; font-weight: bold; font-size: 12px; }}
+            QPushButton#success_btn:hover {{ background-color: #4CAF6B; }}
+            
+            QGroupBox {{ border: 1px solid {border}; margin-top: 12px; background-color: transparent; border-radius: 2px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 4px; color: {text_c}; background-color: {bg_main}; top: 0px; font-weight: bold; }}
+            
+            QSplitter::handle {{ background-color: {border}; width: 2px; }}
+            QScrollArea {{ border: none; background-color: transparent; }}
+            QWidget#scroll_content, QWidget#tab_content {{ background-color: {bg_main}; }}
+            QPlainTextEdit {{ background-color: {bg_input}; color: {text_c}; font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px; border: 1px solid {border}; padding: 6px; border-radius: 2px; }}
+            
+            QScrollBar:horizontal {{ border: none; background: {bg_main}; height: 12px; margin: 0px 0px 0px 0px; }}
+            QScrollBar::handle:horizontal {{ background: {border_light}; min-width: 20px; }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ border: none; background: none; }}
+            QScrollBar:vertical {{ border: none; background: {bg_main}; width: 12px; margin: 0px 0px 0px 0px; }}
+            QScrollBar::handle:vertical {{ background: {border_light}; min-height: 20px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ border: none; background: none; }}
         """)
         
         if hasattr(self, 'canvas_3d'):
-            self.canvas_3d.fig.patch.set_facecolor(bg_card)
-            self.canvas_3d.ax.set_facecolor(bg_card)
-            self.canvas_bp.fig.patch.set_facecolor(bg_card)
+            self.canvas_3d.fig.patch.set_facecolor(bg_plot)
+            self.canvas_3d.ax.set_facecolor(bg_plot)
+            self.canvas_bp.fig.patch.set_facecolor(bg_plot)
             for ax in [self.canvas_bp.ax_top, self.canvas_bp.ax_front, self.canvas_bp.ax_side]:
-                ax.set_facecolor(bg_card)
+                ax.set_facecolor(bg_plot)
             self.update_plots()
 
     def init_data_model(self):
@@ -282,28 +311,53 @@ class AVLDesktopApp(QMainWindow):
         self.current_surface_idx = 0
 
     def setup_geometry_tab(self):
-        geom_widget = QWidget()
-        lay = QVBoxLayout(geom_widget)
-        lay.setContentsMargins(15, 15, 15, 15)
+        from PyQt5.QtWidgets import QScrollArea, QFrame
+        geom_scroll = QScrollArea()
+        geom_scroll.setWidgetResizable(True)
+        geom_scroll.setFrameShape(QFrame.NoFrame)
+        geom_scroll.setObjectName("geom_scroll")
         
-        ref_grp = QGroupBox("Airplane Reference")
+        geom_widget = QWidget()
+        geom_widget.setObjectName("scroll_content")
+        geom_widget.setStyleSheet("QWidget#scroll_content { background-color: transparent; }")
+        
+        lay = QVBoxLayout(geom_widget)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(25)
+        
+        ref_grp = QGroupBox("Global Airplane Parameters")
         ref_lay = QGridLayout(ref_grp)
         self.edit_name = QLineEdit()
+        self.edit_mach = QLineEdit()
+        self.edit_cdp = QLineEdit()
         self.edit_sref = QLineEdit()
         self.edit_cref = QLineEdit()
         self.edit_bref = QLineEdit()
+        self.edit_iysym = QLineEdit()
+        self.edit_izsym = QLineEdit()
+        self.edit_zsym = QLineEdit()
         
-        for e in [self.edit_name, self.edit_sref, self.edit_cref, self.edit_bref]:
+        for e in [self.edit_name, self.edit_mach, self.edit_cdp, self.edit_sref, self.edit_cref, self.edit_bref, self.edit_iysym, self.edit_izsym, self.edit_zsym]:
             e.textChanged.connect(self.update_plane_refs)
         
         ref_lay.addWidget(QLabel("Name:"), 0, 0)
         ref_lay.addWidget(self.edit_name, 0, 1, 1, 3)
-        ref_lay.addWidget(QLabel("S_ref:"), 1, 0)
-        ref_lay.addWidget(self.edit_sref, 1, 1)
-        ref_lay.addWidget(QLabel("C_ref:"), 1, 2)
-        ref_lay.addWidget(self.edit_cref, 1, 3)
-        ref_lay.addWidget(QLabel("B_ref:"), 2, 0)
-        ref_lay.addWidget(self.edit_bref, 2, 1)
+        ref_lay.addWidget(QLabel("Mach:"), 1, 0)
+        ref_lay.addWidget(self.edit_mach, 1, 1)
+        ref_lay.addWidget(QLabel("CDp:"), 1, 2)
+        ref_lay.addWidget(self.edit_cdp, 1, 3)
+        ref_lay.addWidget(QLabel("S_ref:"), 2, 0)
+        ref_lay.addWidget(self.edit_sref, 2, 1)
+        ref_lay.addWidget(QLabel("C_ref:"), 2, 2)
+        ref_lay.addWidget(self.edit_cref, 2, 3)
+        ref_lay.addWidget(QLabel("B_ref:"), 2, 4)
+        ref_lay.addWidget(self.edit_bref, 2, 5)
+        ref_lay.addWidget(QLabel("iYsym:"), 3, 0)
+        ref_lay.addWidget(self.edit_iysym, 3, 1)
+        ref_lay.addWidget(QLabel("iZsym:"), 3, 2)
+        ref_lay.addWidget(self.edit_izsym, 3, 3)
+        ref_lay.addWidget(QLabel("Zsym:"), 3, 4)
+        ref_lay.addWidget(self.edit_zsym, 3, 5)
         lay.addWidget(ref_grp)
 
         surf_grp = QGroupBox("Surface Editor")
@@ -311,6 +365,7 @@ class AVLDesktopApp(QMainWindow):
         
         top_h = QHBoxLayout()
         self.combo_surf = QComboBox()
+        self.combo_surf.setView(QListView())
         self.combo_surf.currentIndexChanged.connect(self.on_surface_selected)
         btn_add_surf = QPushButton("Add Surf")
         btn_add_surf.setObjectName("primary_btn")
@@ -329,9 +384,11 @@ class AVLDesktopApp(QMainWindow):
         self.edit_oy = QLineEdit()
         self.edit_oz = QLineEdit()
         self.edit_inc = QLineEdit()
+        self.edit_nchord = QLineEdit()
+        self.edit_cspace = QLineEdit()
         self.chk_dup = QCheckBox("Y-Duplicate (Symmetric)")
         
-        for e in [self.edit_surf_name, self.edit_ox, self.edit_oy, self.edit_oz, self.edit_inc]:
+        for e in [self.edit_surf_name, self.edit_ox, self.edit_oy, self.edit_oz, self.edit_inc, self.edit_nchord, self.edit_cspace]:
             e.textChanged.connect(self.update_surface_props)
         self.chk_dup.stateChanged.connect(self.update_surface_props)
         
@@ -341,22 +398,32 @@ class AVLDesktopApp(QMainWindow):
         props_lay.addWidget(self.edit_ox, 1, 1)
         props_lay.addWidget(QLabel("Origin Y:"), 1, 2)
         props_lay.addWidget(self.edit_oy, 1, 3)
-        props_lay.addWidget(QLabel("Origin Z:"), 2, 0)
-        props_lay.addWidget(self.edit_oz, 2, 1)
-        props_lay.addWidget(QLabel("Incidence:"), 2, 2)
-        props_lay.addWidget(self.edit_inc, 2, 3)
-        props_lay.addWidget(self.chk_dup, 3, 0, 1, 4)
+        props_lay.addWidget(QLabel("Origin Z:"), 1, 4)
+        props_lay.addWidget(self.edit_oz, 1, 5)
+        props_lay.addWidget(QLabel("Incidence:"), 2, 0)
+        props_lay.addWidget(self.edit_inc, 2, 1)
+        props_lay.addWidget(QLabel("Nchord:"), 2, 2)
+        props_lay.addWidget(self.edit_nchord, 2, 3)
+        props_lay.addWidget(QLabel("Cspace:"), 2, 4)
+        props_lay.addWidget(self.edit_cspace, 2, 5)
+        props_lay.addWidget(self.chk_dup, 3, 0, 1, 6)
         surf_lay.addLayout(props_lay)
         
-        surf_lay.addWidget(QLabel("Sections Data"))
-        self.sec_table = QTableWidget(0, 9)
-        self.sec_table.setHorizontalHeaderLabels(["Y", "Chord", "Off_X", "Dihed", "Twist", "Airfoil", "Ctrl", "Hinge", "CSym"])
+        surf_lay.addWidget(QLabel("Sections Data (Include Nspan, Sspace)"))
+        self.sec_table = QTableWidget(0, 11)
+        self.sec_table.setHorizontalHeaderLabels(["Y", "Chord", "Off_X", "Dihed", "Twist", "Airfoil", "Nspan", "Sspace", "Ctrl", "Hinge", "CSym"])
         self.sec_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sec_table.horizontalHeader().setMinimumHeight(40)
         self.sec_table.verticalHeader().setDefaultSectionSize(36)
         self.sec_table.verticalHeader().setMinimumWidth(35)
+        self.sec_table.setMinimumHeight(250)
         self.sec_table.setAlternatingRowColors(True)
         self.sec_table.itemChanged.connect(self.on_section_table_changed)
+        
+        # Context menu for Sections
+        self.sec_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.sec_table.customContextMenuRequested.connect(self.show_section_context_menu)
+        
         surf_lay.addWidget(self.sec_table)
         
         sec_btn_lay = QHBoxLayout()
@@ -372,47 +439,105 @@ class AVLDesktopApp(QMainWindow):
         
         lay.addWidget(surf_grp)
         
-        btn_export = QPushButton("Export Geometry (.avl)")
+        btn_export = QPushButton("Export Perfect AVL Geometry (.avl)")
         btn_export.setObjectName("success_btn")
         btn_export.clicked.connect(self.export_geom_file)
         lay.addWidget(btn_export)
         
-        self.left_tabs.addTab(geom_widget, "  Geometry  ")
+        geom_scroll.setWidget(geom_widget)
+        self.left_tabs.addTab(geom_scroll, "  Geometry Engine  ")
 
     def setup_mass_tab(self):
         mass_widget = QWidget()
+        mass_widget.setObjectName("tab_content")
         lay = QVBoxLayout(mass_widget)
-        lay.setContentsMargins(15, 15, 15, 15)
+        lay.setContentsMargins(0, 0, 0, 0)
         
-        lay.addWidget(QLabel("Point Masses"))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_content.setObjectName("scroll_content")
+        scroll_lay = QVBoxLayout(scroll_content)
+        scroll_lay.setContentsMargins(15, 15, 15, 15)
+        
+        gb_mass = QGroupBox("Point Masses")
+        gb_lay = QVBoxLayout(gb_mass)
+        
         self.mass_table = QTableWidget(0, 5)
         self.mass_table.setHorizontalHeaderLabels(["Name", "Mass", "X", "Y", "Z"])
         self.mass_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.mass_table.horizontalHeader().setMinimumHeight(40)
         self.mass_table.verticalHeader().setDefaultSectionSize(36)
         self.mass_table.verticalHeader().setMinimumWidth(35)
+        self.mass_table.setMinimumHeight(400)
         self.mass_table.setAlternatingRowColors(True)
         self.mass_table.itemChanged.connect(self.on_mass_table_changed)
-        lay.addWidget(self.mass_table)
+        gb_lay.addWidget(self.mass_table)
         
         mass_btn_lay = QHBoxLayout()
         btn_add = QPushButton("Add Point Mass")
         btn_add.clicked.connect(self.add_mass)
         btn_del = QPushButton("Del Point Mass")
-        btn_del.setStyleSheet("background-color: #FF3B30;")
+        btn_del.setObjectName("danger_btn")
         btn_del.clicked.connect(self.del_mass)
         mass_btn_lay.addWidget(btn_add)
         mass_btn_lay.addWidget(btn_del)
-        lay.addLayout(mass_btn_lay)
+        gb_lay.addLayout(mass_btn_lay)
         
-        self.lbl_cg = QLabel("CG: (0.0, 0.0, 0.0)")
-        self.lbl_cg.setStyleSheet("font-size: 15px; font-weight: bold; margin-top: 15px;")
-        lay.addWidget(self.lbl_cg)
+        gb_notes = QGroupBox("Design Notes / Description")
+        gb_notes_lay = QVBoxLayout(gb_notes)
+        self.txt_notes = QPlainTextEdit()
+        self.txt_notes.setPlaceholderText("Enter design specifications, configuration notes, or descriptions here...")
+        self.txt_notes.setMinimumHeight(150)
+        gb_notes_lay.addWidget(self.txt_notes)
+        
+        scroll_lay.addWidget(gb_mass)
+        scroll_lay.addWidget(gb_notes)
+        scroll_lay.addStretch()
+        scroll.setWidget(scroll_content)
+        lay.addWidget(scroll)
+        
+        bottom_lay = QVBoxLayout()
+        bottom_lay.setContentsMargins(15, 0, 15, 15)
+        
+        gb_cg = QGroupBox("Center of gravity")
+        gb_cg.setAlignment(Qt.AlignCenter)
+        cg_lay = QGridLayout(gb_cg)
+        
+        self.out_mass = QLineEdit()
+        self.out_x_cg = QLineEdit()
+        self.out_y_cg = QLineEdit()
+        self.out_z_cg = QLineEdit()
+        
+        for edit in [self.out_mass, self.out_x_cg, self.out_y_cg, self.out_z_cg]:
+            edit.setReadOnly(True)
+            edit.setAlignment(Qt.AlignRight)
+            edit.setStyleSheet("background-color: transparent; border: 1px solid #41444A; border-radius: 3px; padding: 4px; color: #D4D4D4;")
+
+        cg_lay.addWidget(QLabel("Total Mass="), 0, 0, Qt.AlignRight)
+        cg_lay.addWidget(self.out_mass, 0, 1)
+        cg_lay.addWidget(QLabel("kg"), 0, 2)
+        
+        cg_lay.addWidget(QLabel("X_CoG="), 1, 0, Qt.AlignRight)
+        cg_lay.addWidget(self.out_x_cg, 1, 1)
+        cg_lay.addWidget(QLabel("m"), 1, 2)
+        
+        cg_lay.addWidget(QLabel("Y_CoG="), 2, 0, Qt.AlignRight)
+        cg_lay.addWidget(self.out_y_cg, 2, 1)
+        cg_lay.addWidget(QLabel("m"), 2, 2)
+        
+        cg_lay.addWidget(QLabel("Z_CoG="), 3, 0, Qt.AlignRight)
+        cg_lay.addWidget(self.out_z_cg, 3, 1)
+        cg_lay.addWidget(QLabel("m"), 3, 2)
+        
+        bottom_lay.addWidget(gb_cg)
         
         btn_export_mass = QPushButton("Export Mass (.mass)")
-        btn_export_mass.setStyleSheet("background-color: #34C759; padding: 10px; font-size: 14px; margin-top: 10px;")
+        btn_export_mass.setObjectName("success_btn")
         btn_export_mass.clicked.connect(self.export_mass_file)
-        lay.addWidget(btn_export_mass)
+        bottom_lay.addWidget(btn_export_mass)
+        
+        lay.addLayout(bottom_lay)
         
         self.left_tabs.addTab(mass_widget, "  Mass & Inertia  ")
 
@@ -538,16 +663,18 @@ class AVLDesktopApp(QMainWindow):
 
 
     def refresh_ui(self):
-        self.edit_name.blockSignals(True)
-        self.edit_sref.blockSignals(True)
-        self.edit_cref.blockSignals(True)
-        self.edit_bref.blockSignals(True)
-        self.combo_surf.blockSignals(True)
+        for e in [self.edit_name, self.edit_mach, self.edit_cdp, self.edit_sref, self.edit_cref, self.edit_bref, self.edit_iysym, self.edit_izsym, self.edit_zsym, self.combo_surf]:
+            e.blockSignals(True)
         
         self.edit_name.setText(self.plane.name)
+        self.edit_mach.setText(str(self.plane.mach))
+        self.edit_cdp.setText(str(self.plane.cdp))
         self.edit_sref.setText(str(self.plane.s_ref))
         self.edit_cref.setText(str(self.plane.c_ref))
         self.edit_bref.setText(str(self.plane.b_ref))
+        self.edit_iysym.setText(str(self.plane.iy_sym))
+        self.edit_izsym.setText(str(self.plane.iz_sym))
+        self.edit_zsym.setText(str(self.plane.z_sym))
         
         self.combo_surf.clear()
         for s in self.plane.surfaces:
@@ -555,11 +682,8 @@ class AVLDesktopApp(QMainWindow):
         if self.plane.surfaces:
             self.combo_surf.setCurrentIndex(self.current_surface_idx)
             
-        self.edit_name.blockSignals(False)
-        self.edit_sref.blockSignals(False)
-        self.edit_cref.blockSignals(False)
-        self.edit_bref.blockSignals(False)
-        self.combo_surf.blockSignals(False)
+        for e in [self.edit_name, self.edit_mach, self.edit_cdp, self.edit_sref, self.edit_cref, self.edit_bref, self.edit_iysym, self.edit_izsym, self.edit_zsym, self.combo_surf]:
+            e.blockSignals(False)
         
         self.refresh_surface_ui()
         self.refresh_mass_table()
@@ -569,7 +693,7 @@ class AVLDesktopApp(QMainWindow):
         if not self.plane.surfaces: return
         surf = self.plane.surfaces[self.current_surface_idx]
         
-        for e in [self.edit_surf_name, self.edit_ox, self.edit_oy, self.edit_oz, self.edit_inc, self.chk_dup]:
+        for e in [self.edit_surf_name, self.edit_ox, self.edit_oy, self.edit_oz, self.edit_inc, self.edit_nchord, self.edit_cspace, self.chk_dup]:
             e.blockSignals(True)
             
         self.edit_surf_name.setText(surf.name)
@@ -577,9 +701,11 @@ class AVLDesktopApp(QMainWindow):
         self.edit_oy.setText(str(surf.origin[1]))
         self.edit_oz.setText(str(surf.origin[2]))
         self.edit_inc.setText(str(surf.incidence))
+        self.edit_nchord.setText(str(surf.nchord))
+        self.edit_cspace.setText(str(surf.cspace))
         self.chk_dup.setChecked(surf.duplicate_y)
         
-        for e in [self.edit_surf_name, self.edit_ox, self.edit_oy, self.edit_oz, self.edit_inc, self.chk_dup]:
+        for e in [self.edit_surf_name, self.edit_ox, self.edit_oy, self.edit_oz, self.edit_inc, self.edit_nchord, self.edit_cspace, self.chk_dup]:
             e.blockSignals(False)
             
         self.sec_table.blockSignals(True)
@@ -596,15 +722,32 @@ class AVLDesktopApp(QMainWindow):
             self.sec_table.setItem(i, 2, create_centered_item(sec.offset_x))
             self.sec_table.setItem(i, 3, create_centered_item(sec.dihedral))
             self.sec_table.setItem(i, 4, create_centered_item(sec.twist))
-            self.sec_table.setItem(i, 5, create_centered_item(sec.airfoil))
+            
+            # Create interactive Chip Card for Airfoil
+            chip = QPushButton(sec.airfoil)
+            chip.setStyleSheet("QPushButton { background-color: #2D4035; color: #4CAF50; border: 1px solid #4CAF50; border-radius: 10px; padding: 2px 8px; font-weight: bold; font-family: 'Cascadia Code', monospace; margin: 2px; } QPushButton:hover { background-color: #385042; }")
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.clicked.connect(lambda _, r=i: self.edit_airfoil(r))
+            
+            chip_container = QWidget()
+            chip_lay = QHBoxLayout(chip_container)
+            chip_lay.setContentsMargins(0, 0, 0, 0)
+            chip_lay.setAlignment(Qt.AlignCenter)
+            chip_lay.addWidget(chip)
+            
+            self.sec_table.setCellWidget(i, 5, chip_container)
+            self.sec_table.setItem(i, 5, create_centered_item(sec.airfoil)) # Store text in model for data updates
+            
+            self.sec_table.setItem(i, 6, create_centered_item(sec.nspan))
+            self.sec_table.setItem(i, 7, create_centered_item(sec.sspace))
             
             c_name = sec.control.name if sec.control else ""
             c_hinge = str(sec.control.hinge_x_c) if sec.control else ""
             c_sym = str(sec.control.sym) if sec.control else ""
             
-            self.sec_table.setItem(i, 6, create_centered_item(c_name))
-            self.sec_table.setItem(i, 7, create_centered_item(c_hinge))
-            self.sec_table.setItem(i, 8, create_centered_item(c_sym))
+            self.sec_table.setItem(i, 8, create_centered_item(c_name))
+            self.sec_table.setItem(i, 9, create_centered_item(c_hinge))
+            self.sec_table.setItem(i, 10, create_centered_item(c_sym))
         self.sec_table.blockSignals(False)
 
     def refresh_mass_table(self):
@@ -628,9 +771,14 @@ class AVLDesktopApp(QMainWindow):
     def update_plane_refs(self):
         try:
             self.plane.name = self.edit_name.text()
+            self.plane.mach = float(self.edit_mach.text())
+            self.plane.cdp = float(self.edit_cdp.text())
             self.plane.s_ref = float(self.edit_sref.text())
             self.plane.c_ref = float(self.edit_cref.text())
             self.plane.b_ref = float(self.edit_bref.text())
+            self.plane.iy_sym = int(self.edit_iysym.text())
+            self.plane.iz_sym = int(self.edit_izsym.text())
+            self.plane.z_sym = float(self.edit_zsym.text())
         except ValueError:
             pass
 
@@ -649,10 +797,23 @@ class AVLDesktopApp(QMainWindow):
             self.combo_surf.blockSignals(False)
             surf.origin = (float(self.edit_ox.text()), float(self.edit_oy.text()), float(self.edit_oz.text()))
             surf.incidence = float(self.edit_inc.text())
+            surf.nchord = int(self.edit_nchord.text())
+            surf.cspace = float(self.edit_cspace.text())
             surf.duplicate_y = self.chk_dup.isChecked()
             self.update_plots()
         except ValueError:
             pass
+
+    def edit_airfoil(self, row):
+        if not self.plane.surfaces: return
+        surf = self.plane.surfaces[self.current_surface_idx]
+        if row >= len(surf.sections): return
+        
+        text, ok = QInputDialog.getText(self, "Edit Airfoil", "Enter airfoil name or file (e.g., NACA 2412):", QLineEdit.Normal, surf.sections[row].airfoil)
+        if ok and text.strip():
+            surf.sections[row].airfoil = text.strip()
+            self.refresh_surface_ui()
+            self.update_plots()
 
     def on_section_table_changed(self, item):
         if not self.plane.surfaces: return
@@ -686,20 +847,22 @@ class AVLDesktopApp(QMainWindow):
             dih = get_f(3, old_sec.dihedral)
             twi = get_f(4, old_sec.twist)
             air = get_s(5, old_sec.airfoil)
+            nspan = int(get_f(6, old_sec.nspan))
+            sspace = get_f(7, old_sec.sspace)
             
-            c_name = get_s(6, old_sec.control.name if old_sec.control else "", allow_empty=True)
+            c_name = get_s(8, old_sec.control.name if old_sec.control else "", allow_empty=True)
             ctrl = None
             if c_name:
-                h = get_f(7, old_sec.control.hinge_x_c if old_sec.control else 0.7)
-                sym = int(get_f(8, old_sec.control.sym if old_sec.control else 1))
+                h = get_f(9, old_sec.control.hinge_x_c if old_sec.control else 0.7)
+                sym = int(get_f(10, old_sec.control.sym if old_sec.control else 1))
                 ctrl = ControlSurface(name=c_name, hinge_x_c=h, sym=sym)
-                if self.sec_table.item(i, 7): self.sec_table.item(i, 7).setText(str(h))
-                if self.sec_table.item(i, 8): self.sec_table.item(i, 8).setText(str(sym))
+                if self.sec_table.item(i, 9): self.sec_table.item(i, 9).setText(str(h))
+                if self.sec_table.item(i, 10): self.sec_table.item(i, 10).setText(str(sym))
             else:
-                if self.sec_table.item(i, 7): self.sec_table.item(i, 7).setText("")
-                if self.sec_table.item(i, 8): self.sec_table.item(i, 8).setText("")
+                if self.sec_table.item(i, 9): self.sec_table.item(i, 9).setText("")
+                if self.sec_table.item(i, 10): self.sec_table.item(i, 10).setText("")
                 
-            new_secs.append(Section(y=y, chord=c, offset_x=off, dihedral=dih, twist=twi, airfoil=air, control=ctrl))
+            new_secs.append(Section(y=y, chord=c, offset_x=off, dihedral=dih, twist=twi, airfoil=air, nspan=nspan, sspace=sspace, control=ctrl))
             
             if self.sec_table.item(i, 0): self.sec_table.item(i, 0).setText(str(y))
             if self.sec_table.item(i, 1): self.sec_table.item(i, 1).setText(str(c))
@@ -707,6 +870,8 @@ class AVLDesktopApp(QMainWindow):
             if self.sec_table.item(i, 3): self.sec_table.item(i, 3).setText(str(dih))
             if self.sec_table.item(i, 4): self.sec_table.item(i, 4).setText(str(twi))
             if self.sec_table.item(i, 5): self.sec_table.item(i, 5).setText(air)
+            if self.sec_table.item(i, 6): self.sec_table.item(i, 6).setText(str(nspan))
+            if self.sec_table.item(i, 7): self.sec_table.item(i, 7).setText(str(sspace))
 
         surf.sections = new_secs
         self.sec_table.blockSignals(False)
@@ -751,7 +916,11 @@ class AVLDesktopApp(QMainWindow):
     def update_cg_label(self):
         cg = self.plane.calculate_cg()
         total_mass = sum(m.mass for m in self.plane.point_masses)
-        self.lbl_cg.setText(f"Total Mass: {total_mass:.3f} kg   |   CG: X={cg[0]:.3f}   Y={cg[1]:.3f}   Z={cg[2]:.3f}")
+        if hasattr(self, 'out_mass'):
+            self.out_mass.setText(f"{total_mass:.3f}")
+            self.out_x_cg.setText(f"{cg[0]:.3f}")
+            self.out_y_cg.setText(f"{cg[1]:.3f}")
+            self.out_z_cg.setText(f"{cg[2]:.3f}")
 
     def add_surface(self):
         self.plane.surfaces.append(Surface(f"Surface {len(self.plane.surfaces)+1}", sections=[Section(chord=0.1)]))
@@ -783,6 +952,60 @@ class AVLDesktopApp(QMainWindow):
                 surf.sections.pop()
             self.refresh_surface_ui()
             self.update_plots()
+
+    def show_section_context_menu(self, pos):
+        row = self.sec_table.rowAt(pos.y())
+        if row < 0: return
+        
+        menu = QMenu(self)
+        if getattr(self, 'dark_mode', False):
+            menu.setStyleSheet("QMenu { background-color: #2B2D32; color: #D4D4D4; border: 1px solid #151619; } QMenu::item { padding: 5px 20px 5px 20px; } QMenu::item:selected { background-color: #41444A; }")
+        
+        action_before = QAction(f"Insert before section {row + 1}", self)
+        action_before.triggered.connect(lambda: self.insert_section(row, before=True))
+        
+        action_after = QAction(f"Insert after section {row + 1}", self)
+        action_after.triggered.connect(lambda: self.insert_section(row, before=False))
+        
+        action_del = QAction(f"Delete section {row + 1}", self)
+        action_del.triggered.connect(lambda: self.delete_section_at(row))
+        
+        menu.addAction(action_before)
+        menu.addAction(action_after)
+        menu.addAction(action_del)
+        
+        menu.exec_(self.sec_table.viewport().mapToGlobal(pos))
+        
+    def delete_section_at(self, row):
+        if not self.plane.surfaces: return
+        surf = self.plane.surfaces[self.current_surface_idx]
+        if len(surf.sections) > 1:
+            surf.sections.pop(row)
+            self.refresh_surface_ui()
+            self.update_plots()
+
+    def insert_section(self, row, before=True):
+        if not self.plane.surfaces: return
+        surf = self.plane.surfaces[self.current_surface_idx]
+        
+        import copy
+        new_sec = copy.deepcopy(surf.sections[row])
+        # Interpolate Y if possible to avoid exact overlaps
+        if before:
+            if row > 0:
+                new_sec.y = (surf.sections[row].y + surf.sections[row-1].y) / 2.0
+            else:
+                new_sec.y = surf.sections[row].y - 0.1
+            surf.sections.insert(row, new_sec)
+        else:
+            if row < len(surf.sections) - 1:
+                new_sec.y = (surf.sections[row].y + surf.sections[row+1].y) / 2.0
+            else:
+                new_sec.y = surf.sections[row].y + 0.1
+            surf.sections.insert(row + 1, new_sec)
+            
+        self.refresh_surface_ui()
+        self.update_plots()
 
     def add_mass(self):
         self.plane.point_masses.append(PointMass("New Mass", 1.0))
@@ -889,13 +1112,13 @@ class AVLDesktopApp(QMainWindow):
 
     def plot_3d(self):
         elev = getattr(self.canvas_3d.ax, 'elev', 25)
-        azim = getattr(self.canvas_3d.ax, 'azim', -125)
+        azim = getattr(self.canvas_3d.ax, 'azim', -45)
         
         self.canvas_3d.ax.cla()
         self.canvas_3d.ax.set_axis_off()
-        bg_card = '#2C2C2E' if getattr(self, 'dark_mode', False) else '#FFFFFF'
-        self.canvas_3d.ax.set_facecolor(bg_card)
-        self.canvas_3d.fig.patch.set_facecolor(bg_card)
+        bg_plot = '#000000' if getattr(self, 'dark_mode', False) else '#FFFFFF'
+        self.canvas_3d.ax.set_facecolor(bg_plot)
+        self.canvas_3d.fig.patch.set_facecolor(bg_plot)
         
         colors = ['#0071E3', '#34C759', '#FF9500', '#AF52DE']
 
@@ -971,11 +1194,12 @@ class AVLDesktopApp(QMainWindow):
         dim_c = '#86868B'
         border_c = '#38383A' if getattr(self, 'dark_mode', False) else '#D2D2D7'
         grid_c = '#38383A' if getattr(self, 'dark_mode', False) else '#E5E5EA'
-        bg_card = '#2C2C2E' if getattr(self, 'dark_mode', False) else '#FFFFFF'
+        bg_plot = '#000000' if getattr(self, 'dark_mode', False) else '#FFFFFF'
+        self.canvas_bp.fig.patch.set_facecolor(bg_plot)
         
         for ax in [self.canvas_bp.ax_top, self.canvas_bp.ax_front, self.canvas_bp.ax_side]:
             ax.cla()
-            ax.set_facecolor(bg_card)
+            ax.set_facecolor(bg_plot)
             ax.tick_params(colors=dim_c, labelsize=9)
             for spine in ax.spines.values():
                 spine.set_edgecolor(border_c)
@@ -1164,10 +1388,18 @@ class AVLTerminal(QWidget):
             self.input.clear()
 
 if __name__ == "__main__":
+    try:
+        import ctypes
+        myappid = 'avl.design.studio.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+    app.setWindowIcon(QIcon("icon.png"))
     window = AVLDesktopApp()
     window.show()
     sys.exit(app.exec_())
