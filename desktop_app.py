@@ -87,6 +87,7 @@ class AVLDesktopApp(QMainWindow):
         self.setWindowIcon(QIcon("icon.png"))
         self.resize(1400, 900)
         
+        self.last_directory = ""
         self.init_data_model()
 
         main_widget = QWidget()
@@ -123,6 +124,7 @@ class AVLDesktopApp(QMainWindow):
         self.left_tabs = QTabWidget()
         self.setup_geometry_tab()
         self.setup_mass_tab()
+        self.setup_runcase_tab()
         self.left_tabs.currentChanged.connect(lambda _: self.update_plots())
         splitter.addWidget(self.left_tabs)
 
@@ -254,6 +256,33 @@ class AVLDesktopApp(QMainWindow):
             QComboBox QListView::item {{ background-color: {bg_input}; color: {text_c}; padding: 4px; border: none; }}
             QComboBox QListView::item:selected {{ background-color: {border_light}; color: {text_c}; }}
             
+            QComboBox#chip_combo {{
+                background-color: #2D3139;
+                border: 1px solid transparent;
+                border-radius: 12px;
+                padding: 2px 10px;
+                color: #A5B4FC;
+                font-weight: bold;
+                outline: none;
+            }}
+            QComboBox#chip_combo:focus {{
+                border: 1px solid transparent;
+                outline: none;
+            }}
+            QComboBox#chip_combo:hover {{
+                background-color: #383D47;
+                border: 1px solid transparent;
+            }}
+            QComboBox#chip_combo::drop-down {{ border: none; width: 0px; }}
+            QComboBox#chip_combo::down-arrow {{ image: none; }}
+            QComboBox#chip_combo QAbstractItemView {{
+                border: 1px solid #41444A;
+                background-color: #2D3139;
+                color: #A5B4FC;
+                selection-background-color: #4A4D54;
+                outline: none;
+                border-radius: 0px;
+            }}
             QPushButton#primary_btn {{ background-color: {header_bg}; color: {text_c}; }}
             QPushButton#danger_btn {{ background-color: #D32F2F; color: white; border: 1px solid #B71C1C; border-top: 1px solid #EF5350; }}
             QPushButton#danger_btn:hover {{ background-color: #E53935; }}
@@ -549,7 +578,155 @@ class AVLDesktopApp(QMainWindow):
         
         lay.addLayout(bottom_lay)
         
-        self.left_tabs.addTab(mass_widget, "  Mass & Inertia  ")
+        self.left_tabs.addTab(mass_widget, "  Mass Inertia  ")
+
+    def setup_runcase_tab(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        runcase_widget = QWidget()
+        runcase_widget.setObjectName('scroll_content')
+        scroll.setWidget(runcase_widget)
+        
+        lay = QVBoxLayout(runcase_widget)
+        lay.setContentsMargins(15, 15, 15, 15)
+        lay.setSpacing(15)
+
+        # --- States ---
+        gb_states = QGroupBox("Kinematic States")
+        slay = QGridLayout(gb_states)
+        
+        states_config = [
+            ("alpha", ["alpha", "CL", "Cm pitchmom"]),
+            ("beta", ["beta", "CY", "Cn yaw mom"]),
+            ("pb/2V", ["pb/2V", "Cl roll mom"]),
+            ("qc/2V", ["qc/2V", "Cm pitchmom"]),
+            ("rb/2V", ["rb/2V", "Cn yaw mom"])
+        ]
+        
+        self.rc_states = {}
+        for i, (name, options) in enumerate(states_config):
+            lbl = QLabel(f"{name}  ->")
+            lbl.setMinimumWidth(80)
+            slay.addWidget(lbl, i, 0)
+            
+            cmb = QComboBox()
+            cmb.setObjectName("chip_combo")
+            cmb.setView(QListView())
+            cmb.addItems(options)
+            cmb.setMinimumWidth(120)
+            slay.addWidget(cmb, i, 1)
+            
+            slay.addWidget(QLabel("="), i, 2)
+            
+            val = QLineEdit("0.0000")
+            val.setMaximumWidth(120)
+            slay.addWidget(val, i, 3)
+            
+            self.rc_states[name] = (cmb, val)
+            
+        slay.setColumnStretch(4, 1)
+        lay.addWidget(gb_states)
+
+        # --- Controls ---
+        gb_ctrl = QGroupBox("Control Surfaces (Constraints)")
+        clay = QGridLayout(gb_ctrl)
+        
+        ctrls_config = [
+            ("aileron", ["Cl roll mom", "aileron"]),
+            ("elevator", ["Cm pitchmom", "elevator", "CL"]),
+            ("rudder", ["Cn yaw mom", "rudder", "CY"]),
+            ("flap", ["flap", "CL"])
+        ]
+        
+        self.rc_ctrls = {}
+        for i, (name, options) in enumerate(ctrls_config):
+            lbl = QLabel(f"{name}  ->")
+            lbl.setMinimumWidth(80)
+            clay.addWidget(lbl, i, 0)
+            
+            cmb = QComboBox()
+            cmb.setObjectName("chip_combo")
+            cmb.setView(QListView())
+            cmb.addItems(options)
+            cmb.setMinimumWidth(120)
+            clay.addWidget(cmb, i, 1)
+            
+            clay.addWidget(QLabel("="), i, 2)
+            
+            val = QLineEdit("0.0000")
+            val.setMaximumWidth(120)
+            clay.addWidget(val, i, 3)
+            
+            self.rc_ctrls[name] = (cmb, val)
+
+        clay.setColumnStretch(4, 1)
+        # Dynamic refresh button for controls
+        btn_refresh_ctrls = QPushButton("Fetch Controls from Geometry")
+        # clay.addWidget(btn_refresh_ctrls, len(ctrls_config), 0, 1, 4)  # Placeholder for future dynamic logic
+        lay.addWidget(gb_ctrl)
+        
+        # --- Environment ---
+        gb_env = QGroupBox("Environment & Flight Parameters")
+        elay = QGridLayout(gb_env)
+        
+        env_params = [
+            ("bank", "0.0000"), ("elevation", "0.0000"),
+            ("heading", "0.0000"), ("Mach", "0.0000"), 
+            ("velocity", "30.8633"), ("density", "1.2250"), 
+            ("grav.acc.", "9.81"), ("turn_rad.", "0.0000"), 
+            ("load_fac.", "1.0000")
+        ]
+        
+        self.rc_envs = {}
+        for i, (name, default) in enumerate(env_params):
+            row, col = i // 2, (i % 2) * 2
+            lbl = QLabel(name + " :")
+            lbl.setMinimumWidth(80)
+            elay.addWidget(lbl, row, col)
+            
+            val = QLineEdit(default)
+            val.setMaximumWidth(120)
+            elay.addWidget(val, row, col + 1)
+            self.rc_envs[name] = val
+            
+        elay.setColumnStretch(4, 1)
+        lay.addWidget(gb_env)
+        
+        # --- Mass/CG ---
+        gb_mass = QGroupBox("Mass CG Overrides")
+        mlay = QGridLayout(gb_mass)
+        
+        mass_params = [
+            ("X_cg", "0.0"), ("Y_cg", "0.0"), ("Z_cg", "0.0"),
+            ("mass", "1.0"), ("Ixx", "1.0"), ("Iyy", "1.0"), ("Izz", "1.0")
+        ]
+        
+        self.rc_mass = {}
+        for i, (name, default) in enumerate(mass_params):
+            row, col = i // 2, (i % 2) * 2
+            lbl = QLabel(name + " :")
+            lbl.setMinimumWidth(80)
+            mlay.addWidget(lbl, row, col)
+            
+            val = QLineEdit(default)
+            val.setMaximumWidth(120)
+            mlay.addWidget(val, row, col + 1)
+            self.rc_mass[name] = val
+            
+        mlay.setColumnStretch(4, 1)
+        btn_pull_mass = QPushButton("Pull from Mass Inertia Tab")
+        btn_pull_mass.clicked.connect(self.pull_mass_data)
+        mlay.addWidget(btn_pull_mass, len(mass_params)//2 + 1, 0, 1, 4)
+        lay.addWidget(gb_mass)
+
+        btn_export_run = QPushButton("Export Run Case (.run)")
+        btn_export_run.setObjectName("success_btn")
+        btn_export_run.clicked.connect(self.export_run_file)
+        
+        lay.addWidget(btn_export_run)
+        lay.addStretch()
+
+        self.left_tabs.addTab(scroll, "  Run Case  ")
 
     def setup_analysis_tab(self):
         analysis_widget = QWidget()
@@ -1032,10 +1209,101 @@ class AVLDesktopApp(QMainWindow):
             self.refresh_mass_table()
             self.update_plots()
 
+    def pull_mass_data(self):
+        try:
+            total_mass = sum(pm.mass for pm in self.plane.point_masses)
+            cg = self.plane.calculate_cg()
+            if total_mass > 0:
+                self.rc_mass["mass"].setText(f"{total_mass:.4f}")
+                self.rc_mass["X_cg"].setText(f"{cg[0]:.4f}")
+                self.rc_mass["Y_cg"].setText(f"{cg[1]:.4f}")
+                self.rc_mass["Z_cg"].setText(f"{cg[2]:.4f}")
+                
+                # Calculate inertia
+                Ixx = sum(pm.mass * ((pm.y - cg[1])**2 + (pm.z - cg[2])**2) for pm in self.plane.point_masses)
+                Iyy = sum(pm.mass * ((pm.x - cg[0])**2 + (pm.z - cg[2])**2) for pm in self.plane.point_masses)
+                Izz = sum(pm.mass * ((pm.x - cg[0])**2 + (pm.y - cg[1])**2) for pm in self.plane.point_masses)
+                
+                self.rc_mass["Ixx"].setText(f"{Ixx:.4f}")
+                self.rc_mass["Iyy"].setText(f"{Iyy:.4f}")
+                self.rc_mass["Izz"].setText(f"{Izz:.4f}")
+                
+                QMessageBox.information(self, "Success", "Pulled Mass, CG, and Inertia data successfully.")
+            else:
+                QMessageBox.warning(self, "Warning", "Total mass is 0. Add point masses in the Mass Inertia tab first.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to pull data:\n{str(e)}")
+
+    def export_run_file(self):
+        options = QFileDialog.Options()
+        default_path = os.path.join(self.last_directory, f"{self.plane.name.replace(' ','_')}.run") if self.last_directory else f"{self.plane.name.replace(' ','_')}.run"
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Run Case File", default_path, "Run Files (*.run)", options=options)
+        if not file_path:
+            return
+            
+        self.last_directory = os.path.dirname(file_path)
+        
+        try:
+            lines = []
+            lines.append(" ")
+            lines.append("Run case  1:   -unnamed-                              ")
+            lines.append(" ")
+            
+            # States constraints
+            for name, (cmb, val) in self.rc_states.items():
+                constraint = cmb.currentText()
+                value = val.text()
+                lines.append(f" {name:<12} ->  {constraint:<11} = {value:>9}")
+                
+            # Control constraints
+            for name, (cmb, val) in self.rc_ctrls.items():
+                constraint = cmb.currentText()
+                value = val.text()
+                lines.append(f" {name:<12} ->  {constraint:<11} = {value:>9}")
+                
+            lines.append(" ")
+            
+            # Print state values block (AVL expects these even if they are 0 or overridden by constraints)
+            lines.append(" alpha     =   0.00000                                     ")
+            lines.append(" beta      =   0.00000                                     ")
+            lines.append(" pb/2V     =   0.00000                                     ")
+            lines.append(" qc/2V     =   0.00000                                     ")
+            lines.append(" rb/2V     =   0.00000                                     ")
+            lines.append(" CL        =   0.00000                                     ")
+            lines.append(" CDo       =   0.00000                                     ")
+            
+            # Environment
+            for name in ["bank", "elevation", "heading", "Mach", "velocity", "density", "grav.acc.", "turn_rad.", "load_fac."]:
+                val = self.rc_envs[name].text()
+                lines.append(f" {name:<9} = {float(val):>9.5f}")
+                
+            # Mass & CG
+            for name in ["X_cg", "Y_cg", "Z_cg", "mass", "Ixx", "Iyy", "Izz"]:
+                val = self.rc_mass[name].text()
+                lines.append(f" {name:<9} = {float(val):>9.5f}")
+                
+            # Rest of default parameters
+            lines.append(" Ixy       =   0.00000                                     ")
+            lines.append(" Iyz       =   0.00000                                     ")
+            lines.append(" Izx       =   0.00000                                     ")
+            lines.append(" visc CL_a =   0.00000                                     ")
+            lines.append(" visc CL_u =   0.00000                                     ")
+            lines.append(" visc CM_a =   0.00000                                     ")
+            lines.append(" visc CM_u =   0.00000                                     ")
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(lines) + "\n")
+                
+            QMessageBox.information(self, "Success", f"Successfully exported run case to {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export run case:\n{str(e)}")
+
     def export_geom_file(self):
         options = QFileDialog.Options()
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save AVL Geometry", f"{self.plane.name.replace(' ','_')}.avl", "AVL Files (*.avl)", options=options)
+        default_path = os.path.join(self.last_directory, f"{self.plane.name.replace(' ','_')}.avl") if self.last_directory else f"{self.plane.name.replace(' ','_')}.avl"
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save AVL Geometry", default_path, "AVL Files (*.avl)", options=options)
         if file_path:
+            self.last_directory = os.path.dirname(file_path)
             try:
                 self.plane.to_avl_file(file_path)
                 QMessageBox.information(self, "Success", f"Successfully exported geometry to {file_path}")
@@ -1044,8 +1312,10 @@ class AVLDesktopApp(QMainWindow):
 
     def export_mass_file(self):
         options = QFileDialog.Options()
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Mass File", f"{self.plane.name.replace(' ','_')}.mass", "Mass Files (*.mass)", options=options)
+        default_path = os.path.join(self.last_directory, f"{self.plane.name.replace(' ','_')}.mass") if self.last_directory else f"{self.plane.name.replace(' ','_')}.mass"
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Mass File", default_path, "Mass Files (*.mass)", options=options)
         if file_path:
+            self.last_directory = os.path.dirname(file_path)
             try:
                 self.plane.to_mass_file(file_path)
                 QMessageBox.information(self, "Success", f"Successfully exported mass data to {file_path}")
@@ -1055,8 +1325,10 @@ class AVLDesktopApp(QMainWindow):
     def save_project(self):
         self.plane.description = self.txt_notes.toPlainText()
         options = QFileDialog.Options()
-        filepath, _ = QFileDialog.getSaveFileName(self, "Save Project", f"{self.plane.name.replace(' ','_')}_project.json", "JSON Files (*.json)", options=options)
+        default_path = os.path.join(self.last_directory, f"{self.plane.name.replace(' ','_')}_project.json") if self.last_directory else f"{self.plane.name.replace(' ','_')}_project.json"
+        filepath, _ = QFileDialog.getSaveFileName(self, "Save Project", default_path, "JSON Files (*.json)", options=options)
         if not filepath: return
+        self.last_directory = os.path.dirname(filepath)
         try:
             data = asdict(self.plane)
             with open(filepath, 'w') as f:
@@ -1067,8 +1339,10 @@ class AVLDesktopApp(QMainWindow):
 
     def load_project(self):
         options = QFileDialog.Options()
-        filepath, _ = QFileDialog.getOpenFileName(self, "Load Project", "", "JSON Files (*.json)", options=options)
+        default_path = self.last_directory if self.last_directory else ""
+        filepath, _ = QFileDialog.getOpenFileName(self, "Load Project", default_path, "JSON Files (*.json)", options=options)
         if not filepath: return
+        self.last_directory = os.path.dirname(filepath)
         try:
             with open(filepath, 'r') as f:
                 data = json.load(f)
