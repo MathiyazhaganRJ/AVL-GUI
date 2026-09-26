@@ -321,8 +321,8 @@ class AVLDesktopApp(QMainWindow):
                     name="Main Wing", origin=(0.0, 0.0, 0.0), incidence=1.5,
                     sections=[
                         Section(y=0.0, chord=0.3, airfoil="NACA 2412"),
-                        Section(y=0.6, chord=0.22, offset_x=0.02, dihedral=3.0, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1)),
-                        Section(y=1.0, chord=0.15, offset_x=0.05, twist=-2.0, dihedral=3.0, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1))
+                        Section(y=0.6, chord=0.22, offset_x=0.02, z=0.15, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1)),
+                        Section(y=1.0, chord=0.15, offset_x=0.05, twist=-2.0, z=0.15, airfoil="NACA 2412", control=ControlSurface("Aileron", 0.75, -1))
                     ]
                 ),
                 Surface(
@@ -335,8 +335,8 @@ class AVLDesktopApp(QMainWindow):
                 Surface(
                     name="V-Tail", origin=(1.2, 0.0, 0.0), incidence=0.0, duplicate_y=False,
                     sections=[
-                        Section(y=0.0, chord=0.12, dihedral=90.0, airfoil="NACA 0012", control=ControlSurface("Rudder", 0.7, 1)),
-                        Section(y=0.25, chord=0.08, offset_x=0.04, dihedral=90.0, airfoil="NACA 0012", control=ControlSurface("Rudder", 0.7, 1))
+                        Section(y=0.0, chord=0.12, z=0.0, airfoil="NACA 0012", control=ControlSurface("Rudder", 0.7, 1)),
+                        Section(y=0.0, chord=0.08, offset_x=0.04, z=0.25, airfoil="NACA 0012", control=ControlSurface("Rudder", 0.7, 1))
                     ]
                 )
             ],
@@ -448,7 +448,7 @@ class AVLDesktopApp(QMainWindow):
         
         surf_lay.addWidget(QLabel("Sections Data (Include Nspan, Sspace)"))
         self.sec_table = QTableWidget(0, 11)
-        self.sec_table.setHorizontalHeaderLabels(["Y", "Chord", "Off_X", "Dihed", "Twist", "Airfoil", "Nspan", "Sspace", "Ctrl", "Hinge", "CSym"])
+        self.sec_table.setHorizontalHeaderLabels(["Y", "Chord", "Off_X", "Dihed(deg)", "Twist", "Airfoil", "Nspan", "Sspace", "Ctrl", "Hinge", "CSym"])
         self.sec_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sec_table.horizontalHeader().setMinimumHeight(40)
         self.sec_table.verticalHeader().setDefaultSectionSize(36)
@@ -476,10 +476,18 @@ class AVLDesktopApp(QMainWindow):
         
         lay.addWidget(surf_grp)
         
-        btn_export = QPushButton("Export Perfect AVL Geometry (.avl)")
+        btn_export = QPushButton("Export AVL Geometry (.avl)")
         btn_export.setObjectName("success_btn")
         btn_export.clicked.connect(self.export_geom_file)
-        lay.addWidget(btn_export)
+        btn_import = QPushButton("Import AVL Geometry (.avl)")
+        btn_import.setObjectName("primary_btn")
+        btn_import.clicked.connect(self.import_avl_file)
+        
+        io_lay = QHBoxLayout()
+        io_lay.addWidget(btn_import)
+        io_lay.addWidget(btn_export)
+        lay.addLayout(io_lay)
+
         
         geom_scroll.setWidget(geom_widget)
         self.left_tabs.addTab(geom_scroll, "  Geometry Engine  ")
@@ -551,7 +559,6 @@ class AVLDesktopApp(QMainWindow):
         for edit in [self.out_mass, self.out_x_cg, self.out_y_cg, self.out_z_cg]:
             edit.setReadOnly(True)
             edit.setAlignment(Qt.AlignRight)
-            edit.setStyleSheet("background-color: transparent; border: 1px solid #41444A; border-radius: 3px; padding: 4px; color: #D4D4D4;")
 
         cg_lay.addWidget(QLabel("Total Mass="), 0, 0, Qt.AlignRight)
         cg_lay.addWidget(self.out_mass, 0, 1)
@@ -571,10 +578,18 @@ class AVLDesktopApp(QMainWindow):
         
         bottom_lay.addWidget(gb_cg)
         
+        btn_import_mass = QPushButton("Import Mass (.mass)")
+        btn_import_mass.setObjectName("primary_btn")
+        btn_import_mass.clicked.connect(self.import_mass_file)
+        
         btn_export_mass = QPushButton("Export Mass (.mass)")
         btn_export_mass.setObjectName("success_btn")
         btn_export_mass.clicked.connect(self.export_mass_file)
-        bottom_lay.addWidget(btn_export_mass)
+        
+        mass_io_lay = QHBoxLayout()
+        mass_io_lay.addWidget(btn_import_mass)
+        mass_io_lay.addWidget(btn_export_mass)
+        bottom_lay.addLayout(mass_io_lay)
         
         lay.addLayout(bottom_lay)
         
@@ -907,7 +922,16 @@ class AVLDesktopApp(QMainWindow):
             self.sec_table.setItem(i, 0, create_centered_item(sec.y))
             self.sec_table.setItem(i, 1, create_centered_item(sec.chord))
             self.sec_table.setItem(i, 2, create_centered_item(sec.offset_x))
-            self.sec_table.setItem(i, 3, create_centered_item(sec.dihedral))
+            
+            import math
+            dihedral = 0.0
+            if i > 0:
+                prev = surf.sections[i-1]
+                dy = sec.y - prev.y
+                dz = sec.z - prev.z
+                if dy != 0:
+                    dihedral = math.degrees(math.atan2(dz, dy))
+            self.sec_table.setItem(i, 3, create_centered_item(round(dihedral, 3)))
             self.sec_table.setItem(i, 4, create_centered_item(sec.twist))
             
             # Create interactive Chip Card for Airfoil
@@ -1031,7 +1055,25 @@ class AVLDesktopApp(QMainWindow):
             if c <= 0: c = 0.001
             
             off = get_f(2, old_sec.offset_x)
-            dih = get_f(3, old_sec.dihedral)
+            
+            import math
+            default_dih = 0.0
+            if i > 0:
+                prev_y = new_secs[i-1].y
+                prev_z = new_secs[i-1].z
+                dy = y - prev_y
+                dz = old_sec.z - prev_z
+                if dy != 0:
+                    default_dih = math.degrees(math.atan2(dz, dy))
+                    
+            dih_deg = get_f(3, default_dih)
+            if i == 0:
+                z_val = 0.0
+            else:
+                prev_sec = new_secs[i-1]
+                dy = y - prev_sec.y
+                z_val = prev_sec.z + dy * math.tan(math.radians(dih_deg))
+                
             twi = get_f(4, old_sec.twist)
             air = get_s(5, old_sec.airfoil)
             nspan = int(get_f(6, old_sec.nspan))
@@ -1049,12 +1091,12 @@ class AVLDesktopApp(QMainWindow):
                 if self.sec_table.item(i, 9): self.sec_table.item(i, 9).setText("")
                 if self.sec_table.item(i, 10): self.sec_table.item(i, 10).setText("")
                 
-            new_secs.append(Section(y=y, chord=c, offset_x=off, dihedral=dih, twist=twi, airfoil=air, nspan=nspan, sspace=sspace, control=ctrl))
+            new_secs.append(Section(y=y, chord=c, offset_x=off, z=z_val, twist=twi, airfoil=air, nspan=nspan, sspace=sspace, control=ctrl))
             
             if self.sec_table.item(i, 0): self.sec_table.item(i, 0).setText(str(y))
             if self.sec_table.item(i, 1): self.sec_table.item(i, 1).setText(str(c))
             if self.sec_table.item(i, 2): self.sec_table.item(i, 2).setText(str(off))
-            if self.sec_table.item(i, 3): self.sec_table.item(i, 3).setText(str(dih))
+            if self.sec_table.item(i, 3): self.sec_table.item(i, 3).setText(str(round(dih_deg, 3)))
             if self.sec_table.item(i, 4): self.sec_table.item(i, 4).setText(str(twi))
             if self.sec_table.item(i, 5): self.sec_table.item(i, 5).setText(air)
             if self.sec_table.item(i, 6): self.sec_table.item(i, 6).setText(str(nspan))
@@ -1298,6 +1340,29 @@ class AVLDesktopApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export run case:\n{str(e)}")
 
+    def import_avl_file(self):
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(self, "Import AVL Geometry", self.last_directory, "AVL Files (*.avl);;All Files (*)", options=options)
+        if file_path:
+            self.last_directory = os.path.dirname(file_path)
+            try:
+                from geometry_engine import Airplane
+                imported_plane = Airplane.parse_avl_file(file_path)
+                # Keep existing point masses to prevent data loss
+                imported_plane.point_masses = self.plane.point_masses
+                self.plane = imported_plane
+                
+                # Full UI Refresh
+                self.refresh_ui()
+                self.update_plane_refs()
+                self.update_plots()
+                
+                QMessageBox.information(self, "Success", f"Successfully imported {os.path.basename(file_path)}")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                QMessageBox.critical(self, "Error", f"Failed to import AVL file:\n{str(e)}")
+
     def export_geom_file(self):
         options = QFileDialog.Options()
         default_path = os.path.join(self.last_directory, f"{self.plane.name.replace(' ','_')}.avl") if self.last_directory else f"{self.plane.name.replace(' ','_')}.avl"
@@ -1309,6 +1374,70 @@ class AVLDesktopApp(QMainWindow):
                 QMessageBox.information(self, "Success", f"Successfully exported geometry to {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
+
+    def import_mass_file(self):
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(self, "Import Mass File", self.last_directory, "Mass Files (*.mass);;All Files (*)", options=options)
+        if file_path:
+            self.last_directory = os.path.dirname(file_path)
+            try:
+                from geometry_engine import Airplane
+                Airplane.parse_mass_file(file_path, self.plane)
+                
+                import re
+                def parse_scale(unit_str, is_mass=False):
+                    match = re.search(r"([\d\.]+)\s*([a-zA-Z]+)", unit_str.strip())
+                    if match:
+                        val = float(match.group(1))
+                        unit = match.group(2).lower()
+                        if is_mass:
+                            if unit in ['kg']: return val
+                            if unit in ['g', 'gram', 'grams']: return val * 0.001
+                            if unit in ['oz', 'ounce']: return val * 0.0283495
+                            if unit in ['lb', 'lbs', 'pound']: return val * 0.453592
+                        else:
+                            if unit in ['m']: return val
+                            if unit in ['cm']: return val * 0.01
+                            if unit in ['mm']: return val * 0.001
+                            if unit in ['in', 'inch']: return val * 0.0254
+                            if unit in ['ft', 'feet']: return val * 0.3048
+                        return val
+                    return 1.0
+                
+                l_scale = parse_scale(self.plane.lunit, False)
+                m_scale = parse_scale(self.plane.munit, True)
+                
+                if abs(l_scale - 1.0) > 1e-5 or abs(m_scale - 1.0) > 1e-5:
+                    self.plane.b_ref *= l_scale
+                    self.plane.c_ref *= l_scale
+                    self.plane.s_ref *= (l_scale ** 2)
+                    self.plane.cg = (self.plane.cg[0] * l_scale, self.plane.cg[1] * l_scale, self.plane.cg[2] * l_scale)
+                    
+                    for m in self.plane.point_masses:
+                        m.x *= l_scale
+                        m.y *= l_scale
+                        m.z *= l_scale
+                        m.mass *= m_scale
+                        
+                    for surf in self.plane.surfaces:
+                        surf.origin = (surf.origin[0] * l_scale, surf.origin[1] * l_scale, surf.origin[2] * l_scale)
+                        for sec in surf.sections:
+                            sec.y *= l_scale
+                            sec.offset_x *= l_scale
+                            sec.z *= l_scale
+                            sec.chord *= l_scale
+                            
+                    self.plane.lunit = "1.0 m"
+                    self.plane.munit = "1.0 kg"
+                    QMessageBox.information(self, "Units Converted", f"Detected non-standard units.\nAutomatically scaled entire geometry and mass data to standard Metric (1.0 m, 1.0 kg).")
+                    
+                self.refresh_ui()
+                self.update_plots()
+                QMessageBox.information(self, "Success", f"Successfully imported {os.path.basename(file_path)}")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                QMessageBox.critical(self, "Error", f"Failed to import Mass file:\n{str(e)}")
 
     def export_mass_file(self):
         options = QFileDialog.Options()
@@ -1458,13 +1587,19 @@ class AVLDesktopApp(QMainWindow):
             mz = [m.z for m in self.plane.point_masses]
             self.canvas_3d.ax.scatter(mx, my, mz, color='#0071E3', s=60, marker='o', alpha=0.9)
             
-            text_c = '#F5F5F7' if getattr(self, 'dark_mode', False) else '#1D1D1F'
+            text_c = '#E2E8F0' if getattr(self, 'dark_mode', False) else '#1E293B'
+            bg_c = '#1E293B' if getattr(self, 'dark_mode', False) else '#F8FAFC'
+            border_c = '#334155' if getattr(self, 'dark_mode', False) else '#CBD5E1'
+            
             for m in self.plane.point_masses:
-                self.canvas_3d.ax.text(m.x, m.y, m.z + 0.05, m.name, color=text_c, fontsize=9, fontweight='bold')
+                self.canvas_3d.ax.text(m.x, m.y, m.z + 0.05, f" {m.name} ", color=text_c, fontsize=8, 
+                                       fontweight='bold', fontfamily='monospace',
+                                       bbox=dict(facecolor=bg_c, edgecolor=border_c, alpha=0.8, boxstyle='round,pad=0.3'))
                 
             cg = self.plane.calculate_cg()
             self.canvas_3d.ax.scatter([cg[0]], [cg[1]], [cg[2]], color='#FF3B30', s=120, marker='X')
-            self.canvas_3d.ax.text(cg[0], cg[1], cg[2] + 0.05, "CG", color='#FF3B30', fontsize=10, fontweight='bold')
+            self.canvas_3d.ax.text(cg[0], cg[1], cg[2] + 0.05, " CG ", color='#FFFFFF', fontsize=9, fontweight='bold', fontfamily='monospace',
+                                   bbox=dict(facecolor='#EF4444', edgecolor='none', alpha=0.9, boxstyle='round,pad=0.3'))
 
         # Auto-scale view elegantly
         self.canvas_3d.ax.set_box_aspect([1, 1, 1])
